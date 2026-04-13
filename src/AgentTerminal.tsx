@@ -3,8 +3,11 @@ import { Terminal } from "xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
 interface AgentTerminalProps {
+  agentCommand?: string;
   backlogPath?: string;
+  configVersion?: number;
   onStatusChange?: (status: string | null) => void;
+  onSessionPathChange?: (path: string | null) => void;
 }
 
 type AgentTab = "chat" | "terminal";
@@ -43,19 +46,41 @@ function normalizeChatText(value: string) {
     .replace(/\r/g, "\n");
 }
 
+function sanitizeAssistantLine(value: string) {
+  return value
+    .replace(/[─-╿]/g, " ")
+    .replace(/[•▪◦·]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripPromptArtifacts(value: string) {
+  return value
+    .replace(/\s+gpt-[\w.-]+\s+(?:low|medium|high|xhigh)\s+Context\s+\[[^\]]*\].*$/i, "")
+    .replace(/\s+(?:approval|sandbox|cwd|model):.*$/i, "")
+    .trim();
+}
+
+function extractPaulaMessage(line: string) {
+  const match = line.match(/^PAULA>>\s*(.*)$/i);
+  if (!match) return null;
+  const message = stripPromptArtifacts(match[1] ?? "");
+  return message || null;
+}
+
 function shouldIgnoreChatLine(line: string) {
-  return /^(OpenAI Codex|model:|cwd:|approval:|sandbox:|session id:|--------|\[[^\]]+\]|thinking|working|planning)$/i.test(
+  return /^(OpenAI Codex|model:|cwd:|approval:|sandbox:|session id:|--------|\[[^\]]+\]|thinking|working|planning|gpt-[\w.-]+\s+(?:low|medium|high|xhigh)\b|Context\s+\[[^\]]*\]|~\/.*)$/i.test(
     line,
   );
 }
 
 function shouldShowTerminal(line: string) {
-  return /(login|authenticate|approval|approve|allow access|permission denied|access denied|error:|failed:|exception|press enter|open a browser)/i.test(
+  return /(login|authenticate|approval|approve|request(?:ing)? permission|request(?:ing)? approval|grant access|allow access|needs? approval|needs? permission|permission required|permission denied|access denied|auth(?:entication)? required|continue\?\s*\[[^\]]+\]|confirm\?\s*\[[^\]]+\]|\[[yYnN]\/[^\]]+\]|press enter|open a browser|error:|failed:|exception)/i.test(
     line,
   );
 }
 
-export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerminalProps) {
+export default function AgentTerminal({ agentCommand, backlogPath, configVersion, onStatusChange, onSessionPathChange }: AgentTerminalProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -66,6 +91,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
   const lineBufferRef = useRef("");
   const assistantBufferRef = useRef("");
   const assistantFlushTimerRef = useRef<number | null>(null);
+  const paulaContinuationRef = useRef(false);
   const pendingUserEchoesRef = useRef<string[]>([]);
   const outboundQueueRef = useRef<string[]>([]);
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
@@ -76,14 +102,23 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
   function appendMessage(role: ChatRole, text: string) {
     const normalized = text.trim();
     if (!normalized) return;
-    setMessages((current) => [
-      ...current,
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        role,
-        text: normalized,
-      },
-    ]);
+    setMessages((current) => {
+      const last = current[current.length - 1];
+      if (role === "agent" && last?.role === "agent") {
+        return [
+          ...current.slice(0, -1),
+          { ...last, text: normalized },
+        ];
+      }
+      return [
+        ...current,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role,
+          text: normalized,
+        },
+      ];
+    });
   }
 
   function clearAssistantFlushTimer() {
@@ -97,6 +132,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     clearAssistantFlushTimer();
     const next = assistantBufferRef.current.trim();
     assistantBufferRef.current = "";
+    paulaContinuationRef.current = false;
     setIsAgentTyping(false);
     if (!next) return;
     appendMessage("agent", next);
@@ -106,7 +142,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     clearAssistantFlushTimer();
     assistantFlushTimerRef.current = window.setTimeout(() => {
       flushAssistantBuffer();
-    }, 1100);
+    }, 2200);
   }
 
   function switchToTerminal(status: string) {
@@ -116,7 +152,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
   }
 
   function consumeChatLine(rawLine: string) {
-    const line = rawLine.trim();
+    const line = sanitizeAssistantLine(rawLine);
     if (!line) {
       return;
     }
@@ -136,10 +172,16 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
       return;
     }
 
-    assistantBufferRef.current = assistantBufferRef.current
-      ? `${assistantBufferRef.current}\n${line}`
-      : line;
+    const paulaMessage = extractPaulaMessage(line);
+    if (!paulaMessage) {
+      return;
+    }
+
     setIsAgentTyping(true);
+
+    assistantBufferRef.current = assistantBufferRef.current
+      ? `${assistantBufferRef.current}\n${paulaMessage}`
+      : paulaMessage;
     scheduleAssistantFlush();
   }
 
@@ -159,6 +201,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     assistantBufferRef.current = "";
     pendingUserEchoesRef.current = [];
     outboundQueueRef.current = [];
+    paulaContinuationRef.current = false;
     setDraft("");
     setMessages([]);
     setIsAgentTyping(false);
@@ -168,11 +211,23 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
   function sendInput(data: string) {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      outboundQueueRef.current.push(data);
-      onStatusChange?.("Waiting for Codex session…");
+      outboundQueueRef.current.push(JSON.stringify({ type: "input", data }));
+      onStatusChange?.("Waiting for agent session…");
       return;
     }
     socket.send(JSON.stringify({ type: "input", data }));
+  }
+
+  function submitInput(data: string) {
+    const socket = socketRef.current;
+    const payload = JSON.stringify({ type: "submit", data });
+    setIsAgentTyping(true);
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      outboundQueueRef.current.push(payload);
+      onStatusChange?.("Waiting for agent session…");
+      return;
+    }
+    socket.send(payload);
   }
 
   function flushOutboundQueue() {
@@ -180,8 +235,8 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     if (!socket || socket.readyState !== WebSocket.OPEN || outboundQueueRef.current.length === 0) {
       return;
     }
-    for (const data of outboundQueueRef.current) {
-      socket.send(JSON.stringify({ type: "input", data }));
+    for (const payload of outboundQueueRef.current) {
+      socket.send(payload);
     }
     outboundQueueRef.current = [];
   }
@@ -193,7 +248,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     flushAssistantBuffer();
     appendMessage("user", message);
     pendingUserEchoesRef.current.push(message);
-    sendInput(`${message}`);
+    submitInput(message);
     setDraft("");
   }
 
@@ -245,15 +300,14 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     };
 
     socket.addEventListener("open", () => {
-      onStatusChange?.("Codex terminal connected.");
+      onStatusChange?.("Agent terminal connected.");
       sendResize();
-      flushOutboundQueue();
     });
 
     socket.addEventListener("message", (event) => {
       const payload = JSON.parse(String(event.data)) as
         | { type: "output"; sessionId: string; data: string }
-        | { type: "session"; sessionId: string; backlogPath: string }
+        | { type: "session"; sessionId: string; backlogPath: string; agentCommand?: string }
         | { type: "exit"; sessionId: string; exitCode: number; signal?: number };
 
       if (payload.type === "output") {
@@ -275,22 +329,24 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
         sessionIdRef.current = payload.sessionId;
         flushOutboundQueue();
         scrollTerminalToBottom(terminal);
-        onStatusChange?.(`Codex session attached to ${payload.backlogPath}.`);
+        onSessionPathChange?.(payload.backlogPath);
+        onStatusChange?.(`Agent session attached to ${payload.backlogPath}.`);
         return;
       }
 
       flushAssistantBuffer();
-      terminal.writeln(`\r\n[Codex exited with code ${payload.exitCode}]`);
+      terminal.writeln(`\r\n[Agent exited with code ${payload.exitCode}]`);
       if (payload.exitCode !== 0) {
-        switchToTerminal(`Codex exited with code ${payload.exitCode}.`);
+        switchToTerminal(`Agent exited with code ${payload.exitCode}.`);
       } else {
-        onStatusChange?.("Codex session exited.");
+        onStatusChange?.("Agent session exited.");
       }
       scrollTerminalToBottom(terminal);
     });
 
     socket.addEventListener("close", () => {
-      onStatusChange?.("Codex terminal disconnected.");
+      onStatusChange?.("Agent terminal disconnected.");
+      onSessionPathChange?.(null);
     });
 
     const inputDisposable = terminal.onData((data) => {
@@ -340,24 +396,27 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
   }, [activeTab]);
 
   useEffect(() => {
-    if (!backlogPath) return;
+    if (!backlogPath) {
+      onSessionPathChange?.(null);
+      return;
+    }
 
     let cancelled = false;
 
     void (async () => {
       try {
-        onStatusChange?.("Starting Codex for this backlog…");
+        onStatusChange?.("Starting agent for this backlog…");
         const response = await fetch("/api/agent/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ restart: true }),
+          body: JSON.stringify({ restart: false }),
         });
         const payload = (await response.json().catch(() => null)) as
           | { sessionId?: string; backlogPath?: string; message?: string }
           | null;
 
         if (!response.ok) {
-          throw new Error(payload?.message ?? "Failed to start Codex terminal.");
+          throw new Error(payload?.message ?? "Failed to start agent terminal.");
         }
 
         if (cancelled) return;
@@ -368,7 +427,8 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
         if (terminalRef.current) {
           scrollTerminalToBottom(terminalRef.current);
         }
-        onStatusChange?.(`Codex started for ${payload?.backlogPath ?? backlogPath}.`);
+        onSessionPathChange?.(payload?.backlogPath ?? backlogPath ?? null);
+        onStatusChange?.(`Agent started for ${payload?.backlogPath ?? backlogPath}.`);
       } catch (error) {
         if (cancelled) return;
         switchToTerminal((error as Error).message);
@@ -378,7 +438,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
     return () => {
       cancelled = true;
     };
-  }, [backlogPath, onStatusChange]);
+  }, [agentCommand, backlogPath, configVersion, onSessionPathChange, onStatusChange]);
 
   return (
     <div className="agent-surface">
@@ -444,7 +504,7 @@ export default function AgentTerminal({ backlogPath, onStatusChange }: AgentTerm
         </section>
 
         <section className={`agent-terminal-panel ${activeTab === "terminal" ? "is-active" : ""}`}>
-          <div ref={hostRef} className="terminal-shell" aria-label="Codex terminal" />
+          <div ref={hostRef} className="terminal-shell" aria-label="Agent terminal" />
         </section>
       </div>
     </div>

@@ -35,6 +35,8 @@ Use for completed items with outcome notes.
 - Date added: YYYY-MM-DD
 - Last updated: YYYY-MM-DD
 - Priority: P0 | P1 | P2 | P3
+- Effort: 1 | 2 | 3
+- Sprint Assigned: Sprint name
 - Ready for Implementation?: No | Yes
 - Tech handoff owner: Unassigned | Ben | Tess | Dave
 - Summary: One-sentence description of the request
@@ -60,6 +62,8 @@ Use for completed items with outcome notes.
 - Date added: 2026-04-13
 - Last updated: 2026-04-13
 - Priority: P2
+- Effort: 1
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
 - Summary: Let users switch quickly between views like all epics, single epic, and ready-only review.
@@ -83,6 +87,8 @@ Use for completed items with outcome notes.
 - Date added: 2026-04-13
 - Last updated: 2026-04-13
 - Priority: P1
+- Effort: 1
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
 - Summary: Default the launcher to the repo-local backlog so the app works out of the box without an external file path.
@@ -104,6 +110,8 @@ Use for completed items with outcome notes.
 - Date added: 2026-04-13
 - Last updated: 2026-04-13
 - Priority: P1
+- Effort: 1
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
 - Summary: Show whether a Codex backlog agent was launched successfully and whether it is still running.
@@ -127,6 +135,8 @@ Use for completed items with outcome notes.
 - Date added: 2026-04-13
 - Last updated: 2026-04-13
 - Priority: P0
+- Effort: 2
+- Sprint Assigned: 
 - Ready for Implementation?: Yes
 - Tech handoff owner: Ben
 - Summary: Update the board automatically when the markdown backlog changes on disk, including edits made outside the UI.
@@ -152,6 +162,8 @@ Use for completed items with outcome notes.
 - Date added: 2026-04-13
 - Last updated: 2026-04-13
 - Priority: P0
+- Effort: 3
+- Sprint Assigned: 
 - Ready for Implementation?: Yes
 - Tech handoff owner: Ben
 - Summary: Create a minimal React backlog manager that reads and writes a markdown backlog file safely through a local API.
@@ -164,3 +176,4 @@ Use for completed items with outcome notes.
 - Dependencies: React UI, local API, markdown parser/serializer.
 - Links: src/App.tsx, server/backlog.ts, server/index.ts
 - Implementation notes: Completed with a React board, safe markdown serialization, a launcher script, epic filtering, and automatic refresh from file changes.
+

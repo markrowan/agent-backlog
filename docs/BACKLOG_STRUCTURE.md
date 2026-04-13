@@ -16,7 +16,10 @@ This app treats the markdown file as the durable source of truth.
 - `Requester`
 - `Date added`
 - `Updated`
+- `Due Date`
 - `Priority`
+- `Effort`
+- `Sprint Assigned`
 - `Ready for Implementation?`
 - `Tech handoff owner`
 - `Summary`

@@ -5,6 +5,15 @@ import { FSWatcher, watch } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import {
+  CONFIG_PATH,
+  DEFAULT_AGENT_COMMAND,
+  extractCommandBinary,
+  readConfig,
+  rememberRecentBacklog,
+  removeRecentBacklog,
+  updateConfig,
+} from "./config.js";
 import { WebSocketServer, WebSocket } from "ws";
 import pty, { type IPty } from "node-pty";
 import {
@@ -16,7 +25,7 @@ import {
   updateBacklogTitle,
   writeBacklog,
 } from "./backlog.js";
-import { BacklogItem, BacklogDocument, STATUSES } from "./types.js";
+import { BacklogItem, BacklogDocument, EFFORTS, STATUSES } from "./types.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4177);
@@ -26,6 +35,7 @@ const server = http.createServer(app);
 const wsServer = new WebSocketServer({ server, path: "/api/agent/terminal" });
 
 interface AgentTerminalSession {
+  agentCommand: string;
   backlogPath: string;
   id: string;
   process: IPty;
@@ -36,8 +46,10 @@ const terminalClients = new Set<WebSocket>();
 
 app.use(express.json({ limit: "1mb" }));
 
-function codexAvailable() {
-  const result = spawnSync("sh", ["-lc", "command -v codex"], {
+function agentCommandAvailable(command: string) {
+  const binary = extractCommandBinary(command);
+  if (!binary) return false;
+  const result = spawnSync("sh", ["-lc", `command -v ${binary}`], {
     stdio: "ignore",
   });
   return result.status === 0;
@@ -50,14 +62,21 @@ function broadcastBacklogChanged() {
   }
 }
 
-function bindBacklogWatcher(filePath: string) {
+function bindBacklogWatcher(filePath: string | null) {
   backlogWatcher?.close();
+  backlogWatcher = null;
+
+  if (!filePath) {
+    return;
+  }
+
   backlogWatcher = watch(filePath, { persistent: false }, () => {
     broadcastBacklogChanged();
   });
 }
 
 bindBacklogWatcher(getBacklogFile());
+void readConfig();
 
 function broadcastTerminal(payload: object) {
   const message = JSON.stringify(payload);
@@ -74,21 +93,32 @@ function closeActiveTerminalSession() {
   activeTerminalSession = null;
 }
 
+function submitTerminalInput(process: IPty, text: string) {
+  process.write(text);
+  globalThis.setTimeout(() => {
+    process.write("\r");
+  }, 24);
+}
+
 async function agentBootstrapPrompt(backlogPath: string) {
   const prompt = await fs.readFile(path.resolve("docs/UX_PRODUCT_OWNER_PROMPT.md"), "utf8");
   return [
     prompt.trim(),
     `Backlog file to manage: ${backlogPath}`,
     "Start by reading AGENTS.md in this repo if present.",
-    "Stay in this Codex session and maintain the backlog continuously until redirected.",
+    "For chat rendering, prefix every user-visible reply line with exactly: PAULA>> ",
+    "Stay in this Codex session, but do not take any backlog action until the user gives the first instruction after your short welcome.",
   ].join("\n\n");
 }
 
 async function ensureTerminalSession(options?: { restart?: boolean }) {
   const backlog = await readBacklogFile();
+  const config = await readConfig();
+  const agentCommand = config.agentCommand || DEFAULT_AGENT_COMMAND;
   if (
     activeTerminalSession &&
     activeTerminalSession.backlogPath === backlog.path &&
+    activeTerminalSession.agentCommand === agentCommand &&
     !options?.restart
   ) {
     return activeTerminalSession;
@@ -99,23 +129,36 @@ async function ensureTerminalSession(options?: { restart?: boolean }) {
   const bootstrap = await agentBootstrapPrompt(backlog.path);
   const backlogDirectory = path.dirname(backlog.path);
   const ptyProcess = pty.spawn(
-    "codex",
-    ["--no-alt-screen", "--add-dir", backlogDirectory, bootstrap],
+    "sh",
+    ["-lc", agentCommand],
     {
       name: "xterm-256color",
       cols: 120,
       rows: 30,
       cwd: globalThis.process.cwd(),
-      env: { ...globalThis.process.env, BACKLOG_FILE: backlog.path },
+      env: {
+        ...globalThis.process.env,
+        BACKLOG_BOOTSTRAP: bootstrap,
+        BACKLOG_DIR: backlogDirectory,
+        BACKLOG_FILE: backlog.path,
+      },
     },
   );
 
   const session: AgentTerminalSession = {
     id: randomUUID(),
+    agentCommand,
     backlogPath: backlog.path,
     process: ptyProcess,
   };
   activeTerminalSession = session;
+
+  // Send the bootstrap as real terminal input after the agent process starts, rather than
+  // relying on command-line prompt staging that leaves the text unsent in some terminals.
+  globalThis.setTimeout(() => {
+    if (activeTerminalSession?.id !== session.id) return;
+    submitTerminalInput(ptyProcess, bootstrap);
+  }, 900);
 
   ptyProcess.onData((data) => {
     if (activeTerminalSession?.id !== session.id) return;
@@ -137,6 +180,7 @@ async function ensureTerminalSession(options?: { restart?: boolean }) {
     type: "session",
     sessionId: session.id,
     backlogPath: backlog.path,
+    agentCommand,
   });
 
   return session;
@@ -161,6 +205,11 @@ async function validateBacklogPath(filePath: string) {
   }
 }
 
+function chooserStartDirectory() {
+  const backlogFile = getBacklogFile();
+  return backlogFile ? path.dirname(backlogFile) : globalThis.process.cwd();
+}
+
 function chooseBacklogFilePath(): string | null {
   if (commandExists("zenity")) {
     const result = spawnSync(
@@ -178,7 +227,7 @@ function chooseBacklogFilePath(): string | null {
   if (commandExists("kdialog")) {
     const result = spawnSync(
       "kdialog",
-      ["--getopenfilename", path.dirname(getBacklogFile()), "*.md *.markdown backlog"],
+      ["--getopenfilename", chooserStartDirectory(), "*.md *.markdown backlog"],
       { encoding: "utf8" },
     );
     return result.status === 0 ? result.stdout.trim() : null;
@@ -200,7 +249,7 @@ function chooseFolderPath(): string | null {
   if (commandExists("kdialog")) {
     const result = spawnSync(
       "kdialog",
-      ["--getexistingdirectory", path.dirname(getBacklogFile())],
+      ["--getexistingdirectory", chooserStartDirectory()],
       { encoding: "utf8" },
     );
     return result.status === 0 ? result.stdout.trim() : null;
@@ -229,6 +278,10 @@ function normalizeItem(payload: Partial<BacklogItem>, existingIds: string[]): Ba
     lastUpdated: now,
     dueDate: payload.dueDate?.trim() || "",
     priority: (payload.priority as BacklogItem["priority"]) || "P2",
+    effort: EFFORTS.includes(Number(payload.effort) as (typeof EFFORTS)[number])
+      ? (Number(payload.effort) as BacklogItem["effort"])
+      : 2,
+    sprintAssigned: payload.sprintAssigned?.trim() || "",
     readyForBen: payload.readyForBen === "Yes" ? "Yes" : "No",
     techHandoffOwner:
       payload.techHandoffOwner === "Ben" ||
@@ -247,29 +300,37 @@ function normalizeItem(payload: Partial<BacklogItem>, existingIds: string[]): Ba
 }
 
 app.get("/api/backlog", async (_request, response) => {
-  const backlog = await readBacklogFile();
-  response.json({
-    path: backlog.path,
-    displayName: backlog.displayName,
-    version: backlog.version,
-    document: backlog.document,
-  });
+  try {
+    const backlog = await readBacklogFile();
+    response.json({
+      path: backlog.path,
+      displayName: backlog.displayName,
+      version: backlog.version,
+      document: backlog.document,
+    });
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(404).json({ message: "No backlog file is loaded." });
+      return;
+    }
+    response.status(500).json({ message: (error as Error).message });
+  }
 });
 
 app.post("/api/backlog/choose", async (_request, response) => {
   const selectedPath = chooseBacklogFilePath();
   if (!selectedPath) {
-    response.status(404).json({
-      message: "No Linux file chooser is available, or no file was selected.",
-    });
+    response.status(204).end();
     return;
   }
 
   try {
     await validateBacklogPath(selectedPath);
+    closeActiveTerminalSession();
     setBacklogFile(selectedPath);
     bindBacklogWatcher(selectedPath);
     const backlog = await readBacklogFile();
+    await rememberRecentBacklog(backlog.path, backlog.displayName);
     broadcastBacklogChanged();
     response.json({
       path: backlog.path,
@@ -291,9 +352,11 @@ app.post("/api/backlog/select", async (request, response) => {
 
   try {
     await validateBacklogPath(selectedPath);
+    closeActiveTerminalSession();
     setBacklogFile(selectedPath);
     bindBacklogWatcher(selectedPath);
     const backlog = await readBacklogFile();
+    await rememberRecentBacklog(backlog.path, backlog.displayName);
     broadcastBacklogChanged();
     response.json({
       path: backlog.path,
@@ -309,17 +372,17 @@ app.post("/api/backlog/select", async (request, response) => {
 app.post("/api/backlog/new", async (_request, response) => {
   const selectedFolder = chooseFolderPath();
   if (!selectedFolder) {
-    response.status(404).json({
-      message: "No Linux folder chooser is available, or no folder was selected.",
-    });
+    response.status(204).end();
     return;
   }
 
   try {
     const newBacklogPath = await createBacklogInFolder(selectedFolder);
+    closeActiveTerminalSession();
     setBacklogFile(newBacklogPath);
     bindBacklogWatcher(newBacklogPath);
     const backlog = await readBacklogFile();
+    await rememberRecentBacklog(backlog.path, backlog.displayName);
     broadcastBacklogChanged();
     response.json({
       path: backlog.path,
@@ -329,6 +392,18 @@ app.post("/api/backlog/new", async (_request, response) => {
     });
   } catch (error) {
     response.status(400).json({ message: (error as Error).message });
+  }
+});
+
+app.post("/api/backlog/unload", async (_request, response) => {
+  try {
+    setBacklogFile(null);
+    bindBacklogWatcher(null);
+    closeActiveTerminalSession();
+    broadcastBacklogChanged();
+    response.json({ ok: true });
+  } catch (error) {
+    response.status(500).json({ message: (error as Error).message });
   }
 });
 
@@ -358,6 +433,10 @@ app.put("/api/backlog/items/:id", async (request, response) => {
       });
       return;
     }
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing stories." });
+      return;
+    }
     response.status(500).json({ message: (error as Error).message });
   }
 });
@@ -382,6 +461,10 @@ app.post("/api/backlog/items", async (request, response) => {
         message: "The backlog changed on disk. Refresh and retry.",
         latest: (error as Error & { latest?: BacklogDocument }).latest,
       });
+      return;
+    }
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing stories." });
       return;
     }
     response.status(500).json({ message: (error as Error).message });
@@ -412,6 +495,52 @@ app.delete("/api/backlog/items/:id", async (request, response) => {
       });
       return;
     }
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing stories." });
+      return;
+    }
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
+app.post("/api/backlog/sprints/clear", async (request, response) => {
+  try {
+    const current = await readBacklogFile();
+    const payload = request.body as { version: number; sprint: string };
+    const sprint = String(payload.sprint ?? "").trim();
+    if (!sprint) {
+      response.status(400).json({ message: "Sprint is required." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const items = current.document.items.map((item) =>
+      item.sprintAssigned === sprint
+        ? {
+            ...item,
+            sprintAssigned: "",
+            lastUpdated: now,
+          }
+        : item,
+    );
+
+    const updated = await writeBacklog(
+      { ...current.document, items },
+      Number(payload.version),
+    );
+    response.json(updated);
+  } catch (error) {
+    if ((error as Error & { code?: number }).code === 409) {
+      response.status(409).json({
+        message: "The backlog changed on disk. Refresh and retry.",
+        latest: (error as Error & { latest?: BacklogDocument }).latest,
+      });
+      return;
+    }
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing stories." });
+      return;
+    }
     response.status(500).json({ message: (error as Error).message });
   }
 });
@@ -420,12 +549,17 @@ app.put("/api/backlog/title", async (request, response) => {
   try {
     const payload = request.body as { version: number; title: string };
     const updated = await updateBacklogTitle(String(payload.title ?? ""), Number(payload.version));
+    await rememberRecentBacklog(updated.path, updated.displayName);
     response.json(updated);
   } catch (error) {
     if ((error as Error & { code?: number }).code === 409) {
       response.status(409).json({
         message: "The backlog changed on disk. Refresh and retry.",
       });
+      return;
+    }
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing stories." });
       return;
     }
     response.status(500).json({ message: (error as Error).message });
@@ -445,13 +579,64 @@ app.get("/api/backlog/events", (request, response) => {
   });
 });
 
+app.get("/api/config", async (_request, response) => {
+  try {
+    const config = await readConfig();
+    response.json({ ...config, configPath: CONFIG_PATH });
+  } catch (error) {
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
+app.put("/api/config", async (request, response) => {
+  try {
+    const agentCommand = String(request.body?.agentCommand ?? "").trim() || DEFAULT_AGENT_COMMAND;
+    const config = await updateConfig({ agentCommand });
+    closeActiveTerminalSession();
+    response.json({ ...config, configPath: CONFIG_PATH });
+  } catch (error) {
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
+app.post("/api/config/recent/open", async (request, response) => {
+  try {
+    const pathValue = String(request.body?.path ?? "").trim();
+    const displayName = String(request.body?.displayName ?? "").trim();
+    if (!pathValue || !displayName) {
+      response.status(400).json({ message: "Path and display name are required." });
+      return;
+    }
+    const config = await rememberRecentBacklog(pathValue, displayName);
+    response.json({ ...config, configPath: CONFIG_PATH });
+  } catch (error) {
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
+app.post("/api/config/recent/remove", async (request, response) => {
+  try {
+    const pathValue = String(request.body?.path ?? "").trim();
+    if (!pathValue) {
+      response.status(400).json({ message: "Path is required." });
+      return;
+    }
+    const config = await removeRecentBacklog(pathValue);
+    response.json({ ...config, configPath: CONFIG_PATH });
+  } catch (error) {
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
 app.get("/api/agent-prompt", (_request, response) => {
   response.sendFile(path.resolve("docs/UX_PRODUCT_OWNER_PROMPT.md"));
 });
 
 app.post("/api/agent/session", async (request, response) => {
-  if (!codexAvailable()) {
-    response.status(404).json({ message: "codex is not installed or not available in PATH." });
+  const { agentCommand } = await readConfig();
+  if (!agentCommandAvailable(agentCommand)) {
+    const binary = extractCommandBinary(agentCommand) || agentCommand;
+    response.status(404).json({ message: `${binary} is not installed or not available in PATH.` });
     return;
   }
 
@@ -462,38 +647,56 @@ app.post("/api/agent/session", async (request, response) => {
     response.json({
       sessionId: session.id,
       backlogPath: session.backlogPath,
+      agentCommand: session.agentCommand,
     });
   } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before starting Paula." });
+      return;
+    }
     response.status(500).json({ message: (error as Error).message });
   }
 });
 
 app.post("/api/agent/context", async (request, response) => {
-  if (!codexAvailable()) {
-    response.status(404).json({ message: "codex is not installed or not available in PATH." });
+  const { agentCommand } = await readConfig();
+  if (!agentCommandAvailable(agentCommand)) {
+    const binary = extractCommandBinary(agentCommand) || agentCommand;
+    response.status(404).json({ message: `${binary} is not installed or not available in PATH.` });
     return;
   }
 
   try {
     const session = await ensureTerminalSession();
     const selectedEpic = String(request.body?.selectedEpic ?? "").trim();
+    const selectedOwner = String(request.body?.selectedOwner ?? "").trim();
+    const selectedSprint = String(request.body?.selectedSprint ?? "").trim();
+    const textFilter = String(request.body?.textFilter ?? "").trim();
 
-    if (!selectedEpic || selectedEpic === "All epics") {
-      session.process.write(
-        "Context update: the user is viewing all epics on the board. Work across the backlog unless a narrower instruction follows.\r",
-      );
-      response.json({ message: "Codex context updated for all epics.", sessionId: session.id });
-      return;
-    }
+    const scopeParts = [
+      selectedEpic && selectedEpic !== "All epics" ? `epic: ${selectedEpic}` : null,
+      selectedOwner && selectedOwner !== "All owners" ? `owner: ${selectedOwner}` : null,
+      selectedSprint && selectedSprint !== "All sprints" ? `sprint: ${selectedSprint}` : null,
+      textFilter ? `text filter: "${textFilter}"` : null,
+    ].filter(Boolean);
 
-    session.process.write(
-      `Context update: the user is currently viewing the epic "${selectedEpic}". Prioritize stories in this epic unless redirected.\r`,
-    );
+    const message = scopeParts.length
+      ? `Context update: current UI filters are ${scopeParts.join(", ")}. Treat these only as scope guidance and prioritization hints. You may still inspect or update other tickets in the same backlog when the user's request plausibly requires broader context or cross-ticket coordination.`
+      : "Context update: no narrowing UI filters are active. Treat the whole backlog as in scope unless the user says otherwise.";
+
+    submitTerminalInput(session.process, message);
+
     response.json({
-      message: `Codex context updated for ${selectedEpic}.`,
+      message: scopeParts.length
+        ? `Agent context updated for ${scopeParts.join(", ")}.`
+        : "Agent context updated for the full backlog.",
       sessionId: session.id,
     });
   } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before starting Paula." });
+      return;
+    }
     response.status(500).json({ message: (error as Error).message });
   }
 });
@@ -505,19 +708,25 @@ app.post("/api/agent/run", async (request, response) => {
     return;
   }
 
-  if (!codexAvailable()) {
-    response.status(404).json({ message: "codex is not installed or not available in PATH." });
+  const { agentCommand } = await readConfig();
+  if (!agentCommandAvailable(agentCommand)) {
+    const binary = extractCommandBinary(agentCommand) || agentCommand;
+    response.status(404).json({ message: `${binary} is not installed or not available in PATH.` });
     return;
   }
 
   try {
     const session = await ensureTerminalSession();
-    session.process.write(`${instruction}\r`);
+    submitTerminalInput(session.process, instruction);
     response.json({
-      message: "Instruction sent to Codex.",
+      message: "Instruction sent to the configured agent.",
       sessionId: session.id,
     });
   } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before starting Paula." });
+      return;
+    }
     response.status(500).json({ message: (error as Error).message });
   }
 });
@@ -531,6 +740,7 @@ wsServer.on("connection", (socket: WebSocket) => {
         type: "session",
         sessionId: activeTerminalSession.id,
         backlogPath: activeTerminalSession.backlogPath,
+        agentCommand: activeTerminalSession.agentCommand,
       }),
     );
   }
@@ -541,10 +751,15 @@ wsServer.on("connection", (socket: WebSocket) => {
     try {
       const message = JSON.parse(String(raw)) as
         | { type: "input"; data: string }
+        | { type: "submit"; data: string }
         | { type: "resize"; cols: number; rows: number };
 
       if (message.type === "input") {
         activeTerminalSession.process.write(message.data);
+      }
+
+      if (message.type === "submit") {
+        submitTerminalInput(activeTerminalSession.process, message.data);
       }
 
       if (message.type === "resize") {

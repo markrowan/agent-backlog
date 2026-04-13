@@ -3,17 +3,16 @@ import path from "node:path";
 import {
   BacklogDocument,
   BacklogItem,
+  EFFORTS,
   HANDOFF_OWNERS,
   PRIORITIES,
   STATUSES,
   Status,
 } from "./types.js";
 
-export const BACKLOG_FILE =
-  process.env.BACKLOG_FILE ??
-  "/home/mark/Programs/OpenClaw/workspace/openclaw-docker/backlog/openclaw-docker-backlog.md";
+export const BACKLOG_FILE = process.env.BACKLOG_FILE?.trim() || null;
 
-let currentBacklogFile = BACKLOG_FILE;
+let currentBacklogFile: string | null = BACKLOG_FILE;
 
 const LANE_HEADINGS = new Set(STATUSES.map((status) => `## ${status}`));
 
@@ -53,6 +52,8 @@ Use for completed items with outcome notes.
 - Updated: YYYY-MM-DDTHH:MM:SS.sssZ
 - Due Date: YYYY-MM-DD
 - Priority: P0 | P1 | P2 | P3
+- Effort: 1 | 2 | 3
+- Sprint Assigned: Sprint name
 - Ready for Implementation?: No | Yes
 - Tech handoff owner: Unassigned | Ben | Tess | Dave
 - Summary: One-sentence description of the request
@@ -83,6 +84,11 @@ function safeStatus(value: string): Status {
 
 function safePriority(value: string): BacklogItem["priority"] {
   return (PRIORITIES.find((priority) => priority === value) ?? "P2") as BacklogItem["priority"];
+}
+
+function safeEffort(value: string): BacklogItem["effort"] {
+  const numeric = Number(value);
+  return (EFFORTS.find((effort) => effort === numeric) ?? 2) as BacklogItem["effort"];
 }
 
 function safeHandoffOwner(value: string): BacklogItem["techHandoffOwner"] {
@@ -122,6 +128,8 @@ function toItem(blockLines: string[], epic: string): BacklogItem | null {
     lastUpdated: fields.get("Updated") ?? "",
     dueDate: fields.get("Due Date") ?? "",
     priority: safePriority(fields.get("Priority") ?? "P2"),
+    effort: safeEffort(fields.get("Effort") ?? "2"),
+    sprintAssigned: fields.get("Sprint Assigned") ?? "",
     readyForBen: fields.get("Ready for Implementation?") === "Yes" ? "Yes" : "No",
     techHandoffOwner: safeHandoffOwner(fields.get("Tech handoff owner") ?? "Unassigned"),
     summary: fields.get("Summary") ?? "",
@@ -199,8 +207,17 @@ export function getBacklogFile() {
   return currentBacklogFile;
 }
 
-export function setBacklogFile(nextPath: string) {
-  currentBacklogFile = nextPath;
+export function setBacklogFile(nextPath: string | null) {
+  currentBacklogFile = nextPath?.trim() || null;
+}
+
+function requireBacklogFile() {
+  if (!currentBacklogFile) {
+    const error = new Error("No backlog file is currently loaded.") as Error & { code?: string };
+    error.code = "NO_BACKLOG_LOADED";
+    throw error;
+  }
+  return currentBacklogFile;
 }
 
 function slugifyProjectName(name: string) {
@@ -234,6 +251,8 @@ function formatItem(item: BacklogItem): string {
     `- Updated: ${item.lastUpdated}`,
     `- Due Date: ${item.dueDate}`,
     `- Priority: ${item.priority}`,
+    `- Effort: ${item.effort}`,
+    `- Sprint Assigned: ${item.sprintAssigned}`,
     `- Ready for Implementation?: ${item.readyForBen}`,
     `- Tech handoff owner: ${item.techHandoffOwner}`,
     `- Summary: ${item.summary}`,
@@ -314,6 +333,8 @@ Use for completed items with outcome notes.
 - Date added: YYYY-MM-DD
 - Updated: YYYY-MM-DD
 - Priority: P0 | P1 | P2 | P3
+- Effort: 1 | 2 | 3
+- Sprint Assigned: Sprint name
 - Ready for Implementation?: No | Yes
 - Tech handoff owner: Unassigned | Ben | Tess | Dave
 - Summary: One-sentence description of the request
@@ -350,7 +371,7 @@ export async function createBacklogInFolder(folderPath: string) {
 }
 
 export async function readBacklogFile() {
-  const filePath = getBacklogFile();
+  const filePath = requireBacklogFile();
   const raw = await fs.readFile(filePath, "utf8");
   const stat = await fs.stat(filePath);
   const document = parseBacklog(raw);
@@ -373,7 +394,7 @@ export async function writeBacklog(document: BacklogDocument, expectedVersion: n
   }
 
   const serialized = serializeBacklog(document);
-  const filePath = getBacklogFile();
+  const filePath = requireBacklogFile();
   const directory = path.dirname(filePath);
   const basename = path.basename(filePath);
   const tempPath = path.join(directory, `.${basename}.tmp`);

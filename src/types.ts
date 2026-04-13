@@ -7,10 +7,12 @@ export const STATUSES = [
 ] as const;
 
 export const PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
+export const EFFORTS = [1, 2, 3] as const;
 export const HANDOFF_OWNERS = ["Unassigned", "Ben", "Tess", "Dave"] as const;
 
 export type Status = (typeof STATUSES)[number];
 export type Priority = (typeof PRIORITIES)[number];
+export type Effort = (typeof EFFORTS)[number];
 export type HandoffOwner = (typeof HANDOFF_OWNERS)[number];
 
 export interface BacklogItem {
@@ -24,6 +26,8 @@ export interface BacklogItem {
   lastUpdated: string;
   dueDate: string;
   priority: Priority;
+  effort: Effort;
+  sprintAssigned: string;
   readyForBen: "Yes" | "No";
   techHandoffOwner: HandoffOwner;
   summary: string;

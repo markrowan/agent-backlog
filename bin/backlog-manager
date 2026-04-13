@@ -2,10 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_PATH="${1:-/home/mark/Programs/OpenClaw/workspace/openclaw-docker/backlog}"
+TARGET_PATH="${1:-}"
 PORT_WEB="${PORT_WEB:-5173}"
 PORT_API="${PORT_API:-4177}"
-PROMPT_FILE="$ROOT_DIR/docs/UX_PRODUCT_OWNER_PROMPT.md"
 LOG_WEB="/tmp/codex-backlog-web.log"
 LOG_API="/tmp/codex-backlog-api.log"
 
@@ -48,46 +47,27 @@ wait_for_port() {
   return 1
 }
 
-spawn_codex_agent() {
-  local agent_prompt="$1"
-
-  if ! command -v codex >/dev/null 2>&1; then
-    notify "codex command not found. GUI will start without the backlog agent."
-    return 0
-  fi
-
-  if command -v x-terminal-emulator >/dev/null 2>&1; then
-    nohup x-terminal-emulator -e bash -lc "codex $(printf '%q' "$agent_prompt")" >/tmp/codex-backlog-agent.log 2>&1 &
-    notify "Spawned Codex backlog product owner agent."
-    return 0
-  fi
-
-  if command -v gnome-terminal >/dev/null 2>&1; then
-    nohup gnome-terminal -- bash -lc "codex $(printf '%q' "$agent_prompt"); exec bash" >/tmp/codex-backlog-agent.log 2>&1 &
-    notify "Spawned Codex backlog product owner agent."
-    return 0
-  fi
-
-  notify "codex is installed, but no GUI terminal launcher was found. Start the agent manually if needed."
-}
-
-BACKLOG_FILE="$(resolve_backlog_file "$TARGET_PATH")" || {
-  notify "Could not resolve a unique backlog markdown file from: $TARGET_PATH"
-  exit 1
-}
+BACKLOG_FILE=""
+if [[ -n "$TARGET_PATH" ]]; then
+  BACKLOG_FILE="$(resolve_backlog_file "$TARGET_PATH")" || {
+    notify "Could not resolve a unique backlog markdown file from: $TARGET_PATH"
+    exit 1
+  }
+fi
 
 if [[ ! -d "$ROOT_DIR/node_modules" ]]; then
   notify "Installing backlog manager dependencies..."
   (cd "$ROOT_DIR" && npm install >/dev/null)
 fi
 
-AGENT_PROMPT="$(cat "$PROMPT_FILE")"$'\n\n'"Backlog file to manage: $BACKLOG_FILE"
-spawn_codex_agent "$AGENT_PROMPT"
-
-notify "Starting backlog manager for $BACKLOG_FILE"
+notify "Starting backlog manager"
 (
   cd "$ROOT_DIR"
-  BACKLOG_FILE="$BACKLOG_FILE" PORT="$PORT_API" nohup npm run dev:server >"$LOG_API" 2>&1 &
+  if [[ -n "$BACKLOG_FILE" ]]; then
+    BACKLOG_FILE="$BACKLOG_FILE" PORT="$PORT_API" nohup npm run dev:server >"$LOG_API" 2>&1 &
+  else
+    PORT="$PORT_API" nohup npm run dev:server >"$LOG_API" 2>&1 &
+  fi
   nohup npm run dev:client -- --host 127.0.0.1 >"$LOG_WEB" 2>&1 &
 )
 

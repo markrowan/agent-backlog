@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Download, FolderOpen, Maximize2, Minimize2, PlusSquare, Settings2, Undo2, X } from "lucide-react";
 import AgentTerminal from "./AgentTerminal";
 import {
   BacklogItem,
   BacklogResponse,
+  Effort,
+  EFFORTS,
   HANDOFF_OWNERS,
   PRIORITIES,
+  Priority,
   STATUSES,
   Status,
 } from "./types";
@@ -20,6 +24,8 @@ const EMPTY_ITEM: BacklogItem = {
   lastUpdated: "",
   dueDate: "",
   priority: "P2",
+  effort: 2,
+  sprintAssigned: "",
   readyForBen: "No",
   techHandoffOwner: "Unassigned",
   summary: "",
@@ -35,7 +41,8 @@ const DEFAULT_EDITOR_WIDTH = 820;
 const DEFAULT_EDITOR_HEIGHT = 812;
 const DEFAULT_EDITOR_POSITION = { x: 120, y: 140 };
 const DEFAULT_PAULA_PANEL_SIZE = { width: 540, height: 420 };
-const DEFAULT_SORT_ORDER = ["epic", "priority", "status", "owner", "due", "lastUpdated"] as const;
+const EXPANDED_PAULA_PANEL_RATIO = { width: 2 / 3, height: 2 / 3 };
+const DEFAULT_SORT_ORDER = ["epic", "priority", "effort", "status", "owner", "due", "lastUpdated"] as const;
 type SortKey = (typeof DEFAULT_SORT_ORDER)[number];
 type SortDirection = "asc" | "desc";
 
@@ -57,6 +64,7 @@ const STATUS_ORDER: Record<BacklogItem["status"], number> = {
 const SORT_LABELS: Record<SortKey, string> = {
   epic: "Epic",
   priority: "Priority",
+  effort: "Effort",
   status: "Status",
   owner: "Owner",
   due: "Due",
@@ -64,16 +72,18 @@ const SORT_LABELS: Record<SortKey, string> = {
 };
 
 
+const ALL_SPRINTS = "All sprints";
+const UNASSIGNED_SPRINT = "Unassigned";
+
 const DEFAULT_SORT_DIRECTIONS: Record<SortKey, SortDirection> = {
   epic: "asc",
   priority: "asc",
+  effort: "asc",
   status: "asc",
   owner: "asc",
   due: "asc",
   lastUpdated: "desc",
 };
-
-const RECENT_BACKLOGS_KEY = "codex-agile-recent-backlogs";
 
 interface RecentBacklog {
   path: string;
@@ -81,11 +91,66 @@ interface RecentBacklog {
   lastOpenedAt: number;
 }
 
+interface AppConfig {
+  agentCommand: string;
+  configPath: string;
+  recentBacklogs: RecentBacklog[];
+}
+
 interface MissingBacklogNotice {
   path: string;
   displayName: string;
   message: string;
 }
+
+type DragSource = "board" | "sprint";
+type QuickEditField = "title" | "summary" | "priority" | "effort" | "owner" | "status" | "sprintAssigned" | "dueDate";
+
+type AgentPresetId = "codex" | "claude-code" | "aider" | "gemini-cli" | "custom";
+type FilterCreatorKind = "epic" | "owner" | "sprint";
+
+interface QuickEditState {
+  itemId: string;
+  field: QuickEditField;
+  value: string;
+  x: number;
+  y: number;
+}
+
+interface FilterCreatorState {
+  kind: FilterCreatorKind;
+  x: number;
+  y: number;
+  assignSprintItemId?: string;
+}
+
+interface ConfigPopoverState {
+  x: number;
+  y: number;
+}
+
+const AGENT_PRESETS: Array<{ id: AgentPresetId; label: string; command: string }> = [
+  {
+    id: "codex",
+    label: "Codex",
+    command: 'codex --no-alt-screen --add-dir "$BACKLOG_DIR"',
+  },
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    command: 'claude',
+  },
+  {
+    id: "aider",
+    label: "Aider",
+    command: 'aider --yes "$BACKLOG_FILE"',
+  },
+  {
+    id: "gemini-cli",
+    label: "Gemini CLI",
+    command: 'gemini',
+  },
+];
 
 function themeVars(name: string) {
   let hash = 0;
@@ -136,41 +201,6 @@ function applyThemeToDocument(theme: React.CSSProperties) {
   }
 }
 
-function loadRecentBacklogs(): RecentBacklog[] {
-  try {
-    const raw = window.localStorage.getItem(RECENT_BACKLOGS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as RecentBacklog[];
-    return parsed.filter((entry) => entry.path && entry.displayName);
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentBacklogs(entries: RecentBacklog[]) {
-  window.localStorage.setItem(RECENT_BACKLOGS_KEY, JSON.stringify(entries.slice(0, 8)));
-}
-
-function removeRecentBacklog(pathToRemove: string) {
-  const next = loadRecentBacklogs().filter((entry) => entry.path !== pathToRemove);
-  saveRecentBacklogs(next);
-  return next;
-}
-
-function rememberBacklog(current: BacklogResponse) {
-  const existing = loadRecentBacklogs().filter((entry) => entry.path !== current.path);
-  const next = [
-    {
-      path: current.path,
-      displayName: current.displayName,
-      lastOpenedAt: Date.now(),
-    },
-    ...existing,
-  ].sort((left, right) => right.lastOpenedAt - left.lastOpenedAt);
-  saveRecentBacklogs(next);
-  return next;
-}
-
 function hashToPastel(name: string) {
   let hash = 0;
   for (let index = 0; index < name.length; index += 1) {
@@ -194,9 +224,31 @@ function hashToPastel(name: string) {
   };
 }
 
-function defaultPaulaPanelPosition() {
-  const x = Math.max(16, window.innerWidth - DEFAULT_PAULA_PANEL_SIZE.width - 28);
-  const y = Math.max(16, window.innerHeight - DEFAULT_PAULA_PANEL_SIZE.height - 172);
+function paulaPanelSize(expanded: boolean) {
+  if (!expanded) {
+    return DEFAULT_PAULA_PANEL_SIZE;
+  }
+
+  return {
+    width: Math.round(window.innerWidth * EXPANDED_PAULA_PANEL_RATIO.width),
+    height: Math.round(window.innerHeight * EXPANDED_PAULA_PANEL_RATIO.height),
+  };
+}
+
+function clampPaulaPanelPosition(position: { x: number; y: number }, expanded: boolean) {
+  const size = paulaPanelSize(expanded);
+  const maxX = Math.max(16, window.innerWidth - size.width - 16);
+  const maxY = Math.max(16, window.innerHeight - size.height - 16);
+  return {
+    x: Math.max(16, Math.min(maxX, position.x)),
+    y: Math.max(16, Math.min(maxY, position.y)),
+  };
+}
+
+function defaultPaulaPanelPosition(expanded = false) {
+  const size = paulaPanelSize(expanded);
+  const x = Math.max(16, window.innerWidth - size.width - 28);
+  const y = Math.max(16, window.innerHeight - size.height - 172);
   return { x, y };
 }
 
@@ -249,48 +301,94 @@ function formatDueDate(value: string) {
   return match ? value : value.slice(0, 10);
 }
 
+function formatSprintLabel(value: string) {
+  if (!value.trim()) return "No sprint";
+  const match = value.match(/(\d+)(?!.*\d)/);
+  return match ? `Sprint ${match[1]}` : value;
+}
+
+function quickEditValue(item: BacklogItem, field: QuickEditField) {
+  if (field === "title") return item.title;
+  if (field === "summary") return item.summary;
+  if (field === "priority") return item.priority;
+  if (field === "effort") return String(item.effort);
+  if (field === "owner") return item.owner;
+  if (field === "status") return item.status;
+  if (field === "sprintAssigned") return item.sprintAssigned;
+  return item.dueDate;
+}
+
 function saveIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 3v10.17l3.59-3.58L17 11l-5 5-5-5 1.41-1.41L11 13.17V3h1ZM5 18h14v2H5v-2Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
+  return <Download aria-hidden="true" strokeWidth={1.9} />;
 }
 
 function closeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4 6.4 5Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
+  return <X aria-hidden="true" strokeWidth={1.9} />;
 }
 
 function trashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Zm-1 11h12l1-13H5l1 13Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
+  return <Trash2 aria-hidden="true" strokeWidth={1.9} />;
 }
 
 function discardIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M7.5 5H20v2H10.33l3.38 3.38-1.42 1.42L6.5 6l5.79-5.79 1.42 1.42L10.33 5H7.5ZM4 12h2v6h12v-6h2v8H4v-8Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
+  return <Undo2 aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function chipRemoveIcon() {
+  return <X aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function settingsIcon() {
+  return <Settings2 aria-hidden="true" strokeWidth={1.85} />;
+}
+
+function maximizeIcon() {
+  return <Maximize2 aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function minimizeIcon() {
+  return <Minimize2 aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function newBacklogIcon() {
+  return <PlusSquare aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function openBacklogIcon() {
+  return <FolderOpen aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function itemMatchesTextFilter(item: BacklogItem, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+
+  const haystack = [
+    item.id,
+    item.title,
+    item.status,
+    item.epic,
+    item.owner,
+    item.requester,
+    item.dateAdded,
+    item.lastUpdated,
+    item.dueDate,
+    item.priority,
+    String(item.effort),
+    item.sprintAssigned,
+    item.readyForBen,
+    item.techHandoffOwner,
+    item.summary,
+    item.outcome,
+    item.scopeNotes,
+    ...item.acceptanceCriteria,
+    item.dependencies,
+    item.links,
+    item.implementationNotes,
+  ]
+    .join("\n")
+    .toLowerCase();
+
+  return haystack.includes(normalized);
 }
 
 function App() {
@@ -301,22 +399,43 @@ function App() {
   const [editorBaseline, setEditorBaseline] = useState<BacklogItem | null>(null);
   const [editorPosition, setEditorPosition] = useState(DEFAULT_EDITOR_POSITION);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragSource, setDragSource] = useState<DragSource>("board");
+  const [quickEdit, setQuickEdit] = useState<QuickEditState | null>(null);
   const [selectedEpic, setSelectedEpic] = useState("All epics");
   const [selectedOwner, setSelectedOwner] = useState("All owners");
+  const [selectedSprint, setSelectedSprint] = useState(UNASSIGNED_SPRINT);
+  const [textFilter, setTextFilter] = useState("");
+  const [currentSprintTarget, setCurrentSprintTarget] = useState<string | null>(null);
+  const [currentSprintCollapsed, setCurrentSprintCollapsed] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortKey[]>([...DEFAULT_SORT_ORDER]);
   const [sortDirections, setSortDirections] = useState<Record<SortKey, SortDirection>>({ ...DEFAULT_SORT_DIRECTIONS });
   const [draggingSortKey, setDraggingSortKey] = useState<SortKey | null>(null);
   const [dragOverSortKey, setDragOverSortKey] = useState<SortKey | null>(null);
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [recentBacklogs, setRecentBacklogs] = useState<RecentBacklog[]>([]);
   const [missingBacklogNotice, setMissingBacklogNotice] = useState<MissingBacklogNotice | null>(null);
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
+  const [agentSessionBacklogPath, setAgentSessionBacklogPath] = useState<string | null>(null);
+  const [showConfigPanel, setShowConfigPanel] = useState<ConfigPopoverState | null>(null);
+  const [selectedAgentPreset, setSelectedAgentPreset] = useState<AgentPresetId>("codex");
+  const [customAgentCommand, setCustomAgentCommand] = useState("");
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [agentConfigVersion, setAgentConfigVersion] = useState(0);
   const [choosingFile, setChoosingFile] = useState(false);
   const [creatingFile, setCreatingFile] = useState(false);
   const [showEpicCreator, setShowEpicCreator] = useState(false);
   const [newEpicDraft, setNewEpicDraft] = useState("");
+  const [customEpicOptions, setCustomEpicOptions] = useState<string[]>([]);
+  const [customOwnerOptions, setCustomOwnerOptions] = useState<string[]>([]);
+  const [customSprintOptions, setCustomSprintOptions] = useState<string[]>([]);
+  const [showFilterCreator, setShowFilterCreator] = useState<FilterCreatorState | null>(null);
+  const [newFilterDraft, setNewFilterDraft] = useState("");
+  const [pendingSprintAssignmentItemId, setPendingSprintAssignmentItemId] = useState<string | null>(null);
   const [showUnsavedChangesNotice, setShowUnsavedChangesNotice] = useState(false);
   const [showPaulaPanel, setShowPaulaPanel] = useState(false);
+  const [paulaPanelExpanded, setPaulaPanelExpanded] = useState(false);
   const [paulaPanelPosition, setPaulaPanelPosition] = useState(defaultPaulaPanelPosition);
+  const paulaCompactPositionRef = useRef(defaultPaulaPanelPosition(false));
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   const latestVersionRef = useRef<number | null>(null);
@@ -324,6 +443,98 @@ function App() {
   const draggingEditorRef = useRef(false);
   const paulaDragOffsetRef = useRef({ x: 0, y: 0 });
   const draggingPaulaRef = useRef(false);
+
+  async function loadConfig() {
+    const response = await fetch("/api/config");
+    const payload = (await response.json().catch(() => null)) as AppConfig | { message?: string } | null;
+    if (!response.ok) {
+      throw new Error((payload as { message?: string } | null)?.message ?? "Failed to load config.");
+    }
+    const config = payload as AppConfig;
+    setAppConfig(config);
+    setRecentBacklogs(config.recentBacklogs ?? []);
+    const matchingPreset = AGENT_PRESETS.find((preset) => preset.command === config.agentCommand);
+    setSelectedAgentPreset(matchingPreset?.id ?? "custom");
+    setCustomAgentCommand(matchingPreset ? "" : config.agentCommand);
+    return config;
+  }
+
+  async function rememberBacklogConfig(current: BacklogResponse) {
+    const response = await fetch("/api/config/recent/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: current.path, displayName: current.displayName }),
+    });
+    const payload = (await response.json().catch(() => null)) as AppConfig | { message?: string } | null;
+    if (!response.ok) {
+      throw new Error((payload as { message?: string } | null)?.message ?? "Failed to update recent backlogs.");
+    }
+    const config = payload as AppConfig;
+    setAppConfig(config);
+    setRecentBacklogs(config.recentBacklogs ?? []);
+    return config.recentBacklogs ?? [];
+  }
+
+  async function removeRecentBacklogConfig(pathToRemove: string) {
+    const isCurrentBacklog = data?.path === pathToRemove;
+
+    const response = await fetch("/api/config/recent/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: pathToRemove }),
+    });
+    const payload = (await response.json().catch(() => null)) as AppConfig | { message?: string } | null;
+    if (!response.ok) {
+      throw new Error((payload as { message?: string } | null)?.message ?? "Failed to remove recent backlog.");
+    }
+    const config = payload as AppConfig;
+    setAppConfig(config);
+    setRecentBacklogs(config.recentBacklogs ?? []);
+
+    if (isCurrentBacklog) {
+      const unloadResponse = await fetch("/api/backlog/unload", { method: "POST" });
+      const unloadPayload = (await unloadResponse.json().catch(() => null)) as { message?: string } | null;
+      if (!unloadResponse.ok) {
+        throw new Error(unloadPayload?.message ?? "Failed to unload backlog.");
+      }
+      closeEditorImmediate();
+      setQuickEdit(null);
+      setShowPaulaPanel(false);
+      setData(null);
+      setTitleDraft("");
+      latestVersionRef.current = null;
+      setAgentStatus(null);
+      setAgentSessionBacklogPath(null);
+      setError(null);
+    }
+
+    return config.recentBacklogs ?? [];
+  }
+
+  async function saveAgentCommandConfig(nextCommand: string) {
+    setSavingConfig(true);
+    try {
+      const response = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentCommand: nextCommand }),
+      });
+      const payload = (await response.json().catch(() => null)) as AppConfig | { message?: string } | null;
+      if (!response.ok) {
+        throw new Error((payload as { message?: string } | null)?.message ?? "Failed to save agent config.");
+      }
+      const config = payload as AppConfig;
+      setAppConfig(config);
+      setRecentBacklogs(config.recentBacklogs ?? []);
+      const matchingPreset = AGENT_PRESETS.find((preset) => preset.command === config.agentCommand);
+      setSelectedAgentPreset(matchingPreset?.id ?? "custom");
+      setCustomAgentCommand(matchingPreset ? "" : config.agentCommand);
+      setAgentConfigVersion((current) => current + 1);
+      setAgentStatus("Agent launch command updated.");
+    } finally {
+      setSavingConfig(false);
+    }
+  }
 
   async function loadBacklog(options?: { silent?: boolean }) {
     if (!options?.silent) {
@@ -334,6 +545,13 @@ function App() {
     try {
       const backlogResponse = await fetch("/api/backlog");
 
+      if (backlogResponse.status === 404) {
+        setData(null);
+        setTitleDraft("");
+        latestVersionRef.current = null;
+        return;
+      }
+
       if (!backlogResponse.ok) {
         throw new Error("Failed to load backlog");
       }
@@ -342,7 +560,7 @@ function App() {
       setData(backlog);
       setTitleDraft(backlog.document.title);
       latestVersionRef.current = backlog.version;
-      setRecentBacklogs(rememberBacklog(backlog));
+      await rememberBacklogConfig(backlog);
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -353,8 +571,14 @@ function App() {
   }
 
   useEffect(() => {
-    setRecentBacklogs(loadRecentBacklogs());
-    void loadBacklog();
+    void (async () => {
+      try {
+        await loadConfig();
+      } catch (caught) {
+        setError((caught as Error).message);
+      }
+      await loadBacklog();
+    })();
   }, []);
 
   useEffect(() => {
@@ -368,10 +592,45 @@ function App() {
 
     void (async () => {
       try {
+        const response = await fetch("/api/agent/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ restart: true }),
+        });
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+        if (!response.ok || cancelled) {
+          if (!cancelled && payload?.message) {
+            setAgentStatus(payload.message);
+          }
+          return;
+        }
+      } catch {
+        // Ignore transient warm-start failures.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.path, agentConfigVersion]);
+
+  useEffect(() => {
+    if (!data?.path) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
         const response = await fetch("/api/agent/context", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedEpic }),
+          body: JSON.stringify({
+            selectedEpic,
+            selectedOwner,
+            selectedSprint,
+            textFilter,
+          }),
         });
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
@@ -387,7 +646,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [data?.path, selectedEpic]);
+  }, [data?.path, selectedEpic, selectedOwner, selectedSprint, textFilter]);
 
   useEffect(() => {
     const events = new EventSource("/api/backlog/events");
@@ -395,6 +654,13 @@ function App() {
     const refreshFromDisk = async () => {
       try {
         const backlogResponse = await fetch("/api/backlog");
+        if (backlogResponse.status === 404) {
+          setData(null);
+          setTitleDraft("");
+          latestVersionRef.current = null;
+          setAgentStatus(null);
+          return;
+        }
         if (!backlogResponse.ok) return;
         const backlog = (await backlogResponse.json()) as BacklogResponse;
         if (
@@ -404,7 +670,7 @@ function App() {
           setData(backlog);
           setTitleDraft(backlog.document.title);
           latestVersionRef.current = backlog.version;
-          setRecentBacklogs(rememberBacklog(backlog));
+          await rememberBacklogConfig(backlog);
           setAgentStatus("Backlog refreshed from file changes.");
         }
       } catch {
@@ -421,6 +687,31 @@ function App() {
     };
   }, []);
 
+  const currentSprintSelection = useMemo(() => {
+    if (currentSprintTarget && currentSprintTarget.trim()) {
+      return currentSprintTarget;
+    }
+
+    const sprints = new Set<string>(customSprintOptions);
+    for (const item of data?.document.items ?? []) {
+      if (item.sprintAssigned.trim()) {
+        sprints.add(item.sprintAssigned);
+      }
+    }
+
+    const sorted = Array.from(sprints).sort((left, right) => {
+      const leftMatch = left.match(/(\d+)(?!.*\d)/);
+      const rightMatch = right.match(/(\d+)(?!.*\d)/);
+      if (leftMatch && rightMatch) {
+        const difference = Number(rightMatch[1]) - Number(leftMatch[1]);
+        if (difference !== 0) return difference;
+      }
+      return right.localeCompare(left);
+    });
+
+    return sorted[0] ?? "Sprint 1";
+  }, [currentSprintTarget, customSprintOptions, data]);
+
   const grouped = useMemo(() => {
     if (!data) return new Map<Status, Map<string, BacklogItem[]>>();
     const statuses = new Map<Status, Map<string, BacklogItem[]>>();
@@ -436,6 +727,11 @@ function App() {
 
         if (key === "priority") {
           const result = (PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority]) * direction;
+          if (result !== 0) return result;
+        }
+
+        if (key === "effort") {
+          const result = (left.effort - right.effort) * direction;
           if (result !== 0) return result;
         }
 
@@ -476,6 +772,14 @@ function App() {
     const filteredItems = data.document.items
       .filter((item) => selectedEpic === "All epics" || item.epic === selectedEpic)
       .filter((item) => selectedOwner === "All owners" || item.owner === selectedOwner)
+      .filter((item) =>
+        selectedSprint === ALL_SPRINTS
+          ? true
+          : selectedSprint === UNASSIGNED_SPRINT
+            ? item.sprintAssigned.trim().length === 0
+            : item.sprintAssigned === selectedSprint,
+      )
+      .filter((item) => itemMatchesTextFilter(item, textFilter))
       .sort(compareItems);
 
     for (const item of filteredItems) {
@@ -485,6 +789,14 @@ function App() {
       if (selectedOwner !== "All owners" && item.owner !== selectedOwner) {
         continue;
       }
+      if (selectedSprint !== ALL_SPRINTS) {
+        if (selectedSprint === UNASSIGNED_SPRINT && item.sprintAssigned.trim().length !== 0) {
+          continue;
+        }
+        if (selectedSprint !== UNASSIGNED_SPRINT && item.sprintAssigned !== selectedSprint) {
+          continue;
+        }
+      }
       const lane = statuses.get(item.status)!;
       const epic = item.epic || "Unassigned";
       const bucket = lane.get(epic) ?? [];
@@ -493,23 +805,60 @@ function App() {
     }
 
     return statuses;
-  }, [data, selectedEpic, selectedOwner, sortDirections, sortOrder]);
+  }, [currentSprintSelection, data, selectedEpic, selectedOwner, selectedSprint, sortDirections, sortOrder, textFilter]);
 
   const ownerOptions = useMemo(() => {
-    if (!data) return ["All owners"];
-    return [
-      "All owners",
-      ...Array.from(new Set(data.document.items.map((item) => item.owner || "Unassigned"))).sort(),
-    ];
-  }, [data]);
+    const owners = new Set<string>(customOwnerOptions);
+    for (const item of data?.document.items ?? []) {
+      owners.add(item.owner || "Unassigned");
+    }
+    return ["All owners", ...Array.from(owners).sort()];
+  }, [customOwnerOptions, data]);
+
+  const sprintOptions = useMemo(() => {
+    const sprints = new Set<string>(customSprintOptions);
+    for (const item of data?.document.items ?? []) {
+      if (item.sprintAssigned.trim()) {
+        sprints.add(item.sprintAssigned);
+      }
+    }
+
+    const compareSprintsDescending = (left: string, right: string) => {
+      const leftMatch = left.match(/(\d+)(?!.*\d)/);
+      const rightMatch = right.match(/(\d+)(?!.*\d)/);
+      if (leftMatch && rightMatch) {
+        const difference = Number(rightMatch[1]) - Number(leftMatch[1]);
+        if (difference != 0) return difference;
+      }
+      return right.localeCompare(left);
+    };
+
+    return [ALL_SPRINTS, UNASSIGNED_SPRINT, ...Array.from(sprints).sort(compareSprintsDescending)];
+  }, [customSprintOptions, data]);
+
+  useEffect(() => {
+    setCurrentSprintTarget(null);
+  }, [data?.path]);
+
+  const availableSprintTargets = useMemo(() => sprintOptions.filter((sprint) => sprint !== ALL_SPRINTS && sprint !== UNASSIGNED_SPRINT), [sprintOptions]);
+
+  const currentSprintItems = useMemo(() => {
+    if (!data) return [];
+    if (!currentSprintSelection.trim()) return [];
+    return data.document.items
+      .filter((item) => item.sprintAssigned === currentSprintSelection)
+      .filter((item) => itemMatchesTextFilter(item, textFilter));
+  }, [currentSprintSelection, data, textFilter]);
+
+  const currentSprintEffort = useMemo(() => currentSprintItems.reduce((sum, item) => sum + item.effort, 0), [currentSprintItems]);
 
   const epicOptions = useMemo(() => {
-    if (!data) return ["All epics"];
-    return [
-      "All epics",
-      ...Array.from(new Set(data.document.items.map((item) => item.epic || "Unassigned"))).sort(),
-    ];
-  }, [data]);
+    const epics = new Set<string>(customEpicOptions);
+    for (const item of data?.document.items ?? []) {
+      epics.add(item.epic || "Unassigned");
+    }
+    return ["All epics", ...Array.from(epics).sort()];
+  }, [customEpicOptions, data]);
 
   const epicOptionLabels = useMemo(() => {
     const labels = new Map<string, string>();
@@ -520,7 +869,7 @@ function App() {
       const hasActiveItems = (data?.document.items ?? []).some(
         (item) => (item.epic || "Unassigned") === epic && item.status !== "Done",
       );
-      labels.set(epic, `${hasActiveItems ? "[    ]" : "[DONE]"} ${epic}`);
+      labels.set(epic, `${hasActiveItems ? "Open" : "Done"} - ${epic}`);
     }
 
     return labels;
@@ -548,6 +897,16 @@ function App() {
     }, 0);
 
     return `Epic ${maxEpicNumber + 1}: `;
+  }, [data]);
+
+  const nextSprintNumber = useMemo(() => {
+    const maxSprintNumber = (data?.document.items ?? []).reduce((highest, item) => {
+      const match = item.sprintAssigned.match(/(\d+)(?!.*\d)/);
+      if (!match) return highest;
+      return Math.max(highest, Number(match[1]));
+    }, 0);
+
+    return String(maxSprintNumber + 1);
   }, [data]);
 
   const editorIsDirty = useMemo(() => {
@@ -595,6 +954,36 @@ function App() {
   async function moveItem(item: BacklogItem, status: Status) {
     const readyForBen = status === "Ready" ? "Yes" : item.readyForBen;
     await saveItem({ ...item, status, readyForBen });
+  }
+
+  async function assignItemToSprint(item: BacklogItem, sprintAssigned: string) {
+    await saveItem({ ...item, sprintAssigned });
+  }
+
+  async function clearSprintAssignments(sprint: string) {
+    if (!data) return;
+
+    const response = await fetch("/api/backlog/sprints/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: data.version, sprint }),
+    });
+
+    if (response.status === 409) {
+      setError("The file changed on disk. I reloaded the latest backlog state.");
+      await loadBacklog();
+      return;
+    }
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(payload?.message ?? "Failed to clear sprint assignments");
+    }
+
+    const updated = (await response.json()) as BacklogResponse;
+    setData({ ...data, version: updated.version, document: updated.document });
+    latestVersionRef.current = updated.version;
+    setError(null);
   }
 
   async function deleteItem(itemId: string) {
@@ -671,6 +1060,80 @@ function App() {
     }
   }
 
+  function openFilterCreator(
+    kind: FilterCreatorKind,
+    event: { currentTarget: HTMLElement; preventDefault(): void; stopPropagation(): void },
+    options?: { assignSprintItemId?: string },
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const width = 360;
+    const height = 168;
+    const x = Math.min(Math.max(16, rect.left), Math.max(16, window.innerWidth - width - 16));
+    const y = Math.min(Math.max(16, rect.bottom + 10), Math.max(16, window.innerHeight - height - 16));
+    setShowFilterCreator({ kind, x, y, assignSprintItemId: options?.assignSprintItemId });
+    setPendingSprintAssignmentItemId(options?.assignSprintItemId ?? null);
+    if (kind === "epic") {
+      setNewFilterDraft(nextEpicStub);
+      return;
+    }
+    if (kind === "owner") {
+      setNewFilterDraft("");
+      return;
+    }
+    if (kind === "sprint") {
+      setNewFilterDraft(nextSprintNumber);
+      return;
+    }
+    setNewFilterDraft("");
+  }
+
+  async function createFilterOption() {
+    if (!showFilterCreator) return;
+    const value = newFilterDraft.trim();
+    if (!value) return;
+
+    const assignSprintItemId = showFilterCreator.assignSprintItemId ?? pendingSprintAssignmentItemId;
+
+    if (showFilterCreator.kind === "epic") {
+      setCustomEpicOptions((current) => (current.includes(value) ? current : [...current, value]));
+      setSelectedEpic(value);
+      setShowFilterCreator(null);
+      setNewFilterDraft("");
+      setPendingSprintAssignmentItemId(null);
+      return;
+    }
+
+    if (showFilterCreator.kind === "owner") {
+      setCustomOwnerOptions((current) => (current.includes(value) ? current : [...current, value]));
+      setShowFilterCreator(null);
+      setNewFilterDraft("");
+      setPendingSprintAssignmentItemId(null);
+      return;
+    }
+
+    const sprintNumber = Number.parseInt(value, 10);
+    if (!Number.isFinite(sprintNumber) || sprintNumber < 1) return;
+    const sprintLabel = `Sprint ${sprintNumber}`;
+    setCustomSprintOptions((current) => (current.includes(sprintLabel) ? current : [...current, sprintLabel]));
+    setCurrentSprintTarget(sprintLabel);
+    setShowFilterCreator(null);
+    setNewFilterDraft("");
+    setPendingSprintAssignmentItemId(null);
+
+    if (!assignSprintItemId || !data) return;
+    const item = data.document.items.find((candidate) => candidate.id === assignSprintItemId);
+    if (!item) return;
+
+    try {
+      await assignItemToSprint(item, sprintLabel);
+      setQuickEdit(null);
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+
   function createEpicForEditor() {
     if (!editor) return;
     const epicName = newEpicDraft.trim();
@@ -678,6 +1141,87 @@ function App() {
     setEditor({ ...editor, epic: epicName });
     setShowEpicCreator(false);
     setNewEpicDraft("");
+  }
+
+  function openQuickEditor(
+    item: BacklogItem,
+    field: QuickEditField,
+    event: React.MouseEvent<HTMLElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const popoverWidth = field === "summary" ? 340 : 260;
+    const popoverHeight = field === "summary" ? 220 : 164;
+    const x = Math.min(
+      Math.max(16, rect.left),
+      Math.max(16, window.innerWidth - popoverWidth - 16),
+    );
+    const y = Math.min(
+      Math.max(16, rect.bottom + 10),
+      Math.max(16, window.innerHeight - popoverHeight - 16),
+    );
+
+    setQuickEdit({
+      itemId: item.id,
+      field,
+      value: quickEditValue(item, field),
+      x,
+      y,
+    });
+  }
+
+  async function saveQuickEdit() {
+    if (!quickEdit || !data) return;
+    const item = data.document.items.find((candidate) => candidate.id === quickEdit.itemId);
+    if (!item) {
+      setQuickEdit(null);
+      return;
+    }
+
+    const trimmedValue = quickEdit.value.trim();
+    const nextItem: BacklogItem = {
+      ...item,
+      title: quickEdit.field === "title" ? trimmedValue || item.title : item.title,
+      summary: quickEdit.field === "summary" ? trimmedValue : item.summary,
+      priority: quickEdit.field === "priority" ? (quickEdit.value as Priority) : item.priority,
+      effort:
+        quickEdit.field === "effort"
+          ? (Number.parseInt(quickEdit.value, 10) as Effort)
+          : item.effort,
+      owner: quickEdit.field === "owner" ? trimmedValue || item.owner : item.owner,
+      status: quickEdit.field === "status" ? (quickEdit.value as Status) : item.status,
+      sprintAssigned:
+        quickEdit.field === "sprintAssigned"
+          ? trimmedValue
+          : item.sprintAssigned,
+      dueDate: quickEdit.field === "dueDate" ? quickEdit.value : item.dueDate,
+    };
+
+    try {
+      await saveItem(nextItem);
+      setQuickEdit(null);
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+
+  function handleQuickEditKeyDown(event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setQuickEdit(null);
+      return;
+    }
+
+    const isSummaryField = quickEdit?.field === "summary";
+    const shouldSave = isSummaryField
+      ? (event.metaKey || event.ctrlKey) && event.key === "Enter"
+      : event.key === "Enter";
+
+    if (shouldSave) {
+      event.preventDefault();
+      void saveQuickEdit();
+    }
   }
 
   async function chooseBacklogFile() {
@@ -688,6 +1232,11 @@ function App() {
       const response = await fetch("/api/backlog/choose", {
         method: "POST",
       });
+
+      if (response.status === 204) {
+        return;
+      }
+
       const payload = (await response.json().catch(() => null)) as
         | BacklogResponse
         | { message?: string }
@@ -701,7 +1250,7 @@ function App() {
       setData(backlog);
       setTitleDraft(backlog.document.title);
       latestVersionRef.current = backlog.version;
-      setRecentBacklogs(rememberBacklog(backlog));
+      await rememberBacklogConfig(backlog);
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -739,7 +1288,7 @@ function App() {
       setData(backlog);
       setTitleDraft(backlog.document.title);
       latestVersionRef.current = backlog.version;
-      setRecentBacklogs(rememberBacklog(backlog));
+      await rememberBacklogConfig(backlog);
     } catch (caught) {
       setError((caught as Error).message);
     }
@@ -751,6 +1300,11 @@ function App() {
 
     try {
       const response = await fetch("/api/backlog/new", { method: "POST" });
+
+      if (response.status === 204) {
+        return;
+      }
+
       const payload = (await response.json().catch(() => null)) as
         | BacklogResponse
         | { message?: string }
@@ -764,7 +1318,7 @@ function App() {
       setData(backlog);
       setTitleDraft(backlog.document.title);
       latestVersionRef.current = backlog.version;
-      setRecentBacklogs(rememberBacklog(backlog));
+      await rememberBacklogConfig(backlog);
       setAgentStatus(`Created ${backlog.displayName}.`);
     } catch (caught) {
       setError((caught as Error).message);
@@ -798,7 +1352,7 @@ function App() {
       setData(backlog);
       setTitleDraft(backlog.document.title);
       latestVersionRef.current = backlog.version;
-      setRecentBacklogs(rememberBacklog(backlog));
+      await rememberBacklogConfig(backlog);
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -844,9 +1398,17 @@ function App() {
 
   function onPaulaPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     if (!draggingPaulaRef.current) return;
-    const nextX = Math.max(16, Math.min(window.innerWidth - DEFAULT_PAULA_PANEL_SIZE.width, event.clientX - paulaDragOffsetRef.current.x));
-    const nextY = Math.max(16, Math.min(window.innerHeight - 220, event.clientY - paulaDragOffsetRef.current.y));
-    setPaulaPanelPosition({ x: nextX, y: nextY });
+    const nextPosition = clampPaulaPanelPosition(
+      {
+        x: event.clientX - paulaDragOffsetRef.current.x,
+        y: event.clientY - paulaDragOffsetRef.current.y,
+      },
+      paulaPanelExpanded,
+    );
+    if (!paulaPanelExpanded) {
+      paulaCompactPositionRef.current = nextPosition;
+    }
+    setPaulaPanelPosition(nextPosition);
   }
 
   function onPaulaPointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -856,15 +1418,33 @@ function App() {
     }
   }
 
+  function openConfigPanel(event: React.MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const width = 420;
+    const height = 280;
+    const x = Math.min(Math.max(16, rect.left - width + rect.width), Math.max(16, window.innerWidth - width - 16));
+    const y = Math.min(Math.max(16, rect.bottom + 10), Math.max(16, window.innerHeight - height - 16));
+    setShowConfigPanel((current) => (current ? null : { x, y }));
+  }
+
   function openPaulaPanel() {
-    setPaulaPanelPosition((current) => {
-      const maxX = Math.max(16, window.innerWidth - DEFAULT_PAULA_PANEL_SIZE.width);
-      const maxY = Math.max(16, window.innerHeight - 220);
-      const nextX = Math.max(16, Math.min(maxX, current.x));
-      const nextY = Math.max(16, Math.min(maxY, current.y));
-      return { x: nextX, y: nextY };
-    });
+    setPaulaPanelPosition((current) => clampPaulaPanelPosition(current, paulaPanelExpanded));
     setShowPaulaPanel(true);
+  }
+
+  function togglePaulaPanelExpanded() {
+    setPaulaPanelExpanded((current) => {
+      const nextExpanded = !current;
+      if (!current) {
+        paulaCompactPositionRef.current = clampPaulaPanelPosition(paulaPanelPosition, false);
+        setPaulaPanelPosition((position) => clampPaulaPanelPosition(position, true));
+      } else {
+        setPaulaPanelPosition(clampPaulaPanelPosition(paulaCompactPositionRef.current, false));
+      }
+      return nextExpanded;
+    });
   }
 
   function reorderSortKeys(source: SortKey, target: SortKey) {
@@ -943,6 +1523,8 @@ function App() {
             <input
               className="hero-title-input"
               value={titleDraft}
+              placeholder="Open a backlog"
+              disabled={!data?.path}
               onChange={(event) => setTitleDraft(event.target.value)}
               onBlur={() => void saveTitle()}
               onKeyDown={(event) => {
@@ -956,33 +1538,54 @@ function App() {
             <div className="shortcut-chip-row hero-chip-row">
               <button
                 type="button"
-                className="source-picker"
+                className="source-picker source-picker--icon"
                 onClick={() => void createBacklogFile()}
                 disabled={creatingFile}
+                aria-label={creatingFile ? "Creating backlog" : "Create new backlog"}
+                title={creatingFile ? "Creating…" : "New backlog"}
               >
-                <span className="source-picker-title">{creatingFile ? "Creating…" : "New"}</span>
+                {newBacklogIcon()}
               </button>
               <button
                 type="button"
-                className="source-picker"
+                className="source-picker source-picker--icon"
                 onClick={() => void chooseBacklogFile()}
                 disabled={choosingFile}
+                aria-label={choosingFile ? "Opening backlog" : "Open existing backlog"}
+                title={choosingFile ? "Opening…" : "Open backlog"}
               >
-                <span className="source-picker-title">
-                  {choosingFile ? "Opening…" : "Open"}
-                </span>
+                {openBacklogIcon()}
               </button>
               {recentBacklogs.map((entry) => (
-                <button
+                <div
                   key={entry.path}
-                  type="button"
-                  className={`shortcut-chip ${data?.path === entry.path ? "is-active" : ""}`}
+                  className={`shortcut-chip-group ${data?.path === entry.path ? "is-active" : ""}`}
                   style={hashToPastel(entry.displayName)}
-                  onClick={() => void selectBacklogFile(entry.path)}
                   title={entry.path}
                 >
-                  <span className="shortcut-chip-label">{entry.displayName}</span>
-                </button>
+                  <button
+                    type="button"
+                    className={`shortcut-chip ${data?.path === entry.path ? "is-active" : ""}`}
+                    onClick={() => void selectBacklogFile(entry.path)}
+                  >
+                    <span className="shortcut-chip-label">{entry.displayName}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="shortcut-chip-remove"
+                    aria-label={`Remove ${entry.displayName}`}
+                    onClick={async (event) => {
+                      event.stopPropagation();
+                      try {
+                        await removeRecentBacklogConfig(entry.path);
+                      } catch (caught) {
+                        setError((caught as Error).message);
+                      }
+                    }}
+                  >
+                    {chipRemoveIcon()}
+                  </button>
+                </div>
               ))}
             </div>
             <div className="metrics-row hero-metrics-row">
@@ -996,6 +1599,15 @@ function App() {
                   {new Set(data?.document.items.map((item) => item.epic)).size}
                 </div>
               </div>
+              <button
+                type="button"
+                className={`config-button ${showConfigPanel ? "is-active" : ""}`}
+                onClick={openConfigPanel}
+                aria-label="Agent configuration"
+                title={appConfig?.configPath ?? "Agent configuration"}
+              >
+                {settingsIcon()}
+              </button>
             </div>
           </div>
           {savingTitle ? <span className="agent-status">Saving title…</span> : null}
@@ -1003,6 +1615,248 @@ function App() {
       </header>
 
       {error ? <div className="banner-error">{error}</div> : null}
+
+      {showConfigPanel ? (
+        <div className="quick-edit-layer">
+          <button
+            type="button"
+            className="quick-edit-scrim"
+            onClick={() => setShowConfigPanel(null)}
+            aria-label="Close settings"
+          />
+          <div
+            className="config-popover config-popover--floating"
+            style={{ left: `${showConfigPanel.x}px`, top: `${showConfigPanel.y}px` }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">Agent</p>
+            <label className="config-field">
+              <span>Launcher</span>
+              <select
+                value={selectedAgentPreset}
+                onChange={(event) => {
+                  const nextPreset = event.target.value as AgentPresetId;
+                  setSelectedAgentPreset(nextPreset);
+                  if (nextPreset !== "custom") {
+                    const preset = AGENT_PRESETS.find((item) => item.id === nextPreset);
+                    if (preset) {
+                      void saveAgentCommandConfig(preset.command).catch((caught) => {
+                        setError((caught as Error).message);
+                      });
+                    }
+                  }
+                }}
+              >
+                {AGENT_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{preset.label}</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            {selectedAgentPreset === "custom" ? (
+              <label className="config-field">
+                <span>Command</span>
+                <input
+                  value={customAgentCommand}
+                  onChange={(event) => setCustomAgentCommand(event.target.value)}
+                  placeholder='my-agent "$BACKLOG_BOOTSTRAP"'
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void saveAgentCommandConfig(customAgentCommand).catch((caught) => {
+                        setError((caught as Error).message);
+                      });
+                    }
+                    if (event.key === "Escape") {
+                      setShowConfigPanel(null);
+                    }
+                  }}
+                />
+              </label>
+            ) : null}
+            <p className="config-hint">Uses env vars: <code>BACKLOG_BOOTSTRAP</code>, <code>BACKLOG_DIR</code>, <code>BACKLOG_FILE</code>.</p>
+            <div className="config-actions">
+              <button type="button" className="ghost-button" onClick={() => setShowConfigPanel(null)}>Close</button>
+              {selectedAgentPreset === "custom" ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={savingConfig || !customAgentCommand.trim()}
+                  onClick={() => {
+                    void saveAgentCommandConfig(customAgentCommand).catch((caught) => {
+                      setError((caught as Error).message);
+                    });
+                  }}
+                >
+                  {savingConfig ? "Saving…" : "Save"}
+                </button>
+              ) : null}
+            </div>
+            {appConfig?.configPath ? <div className="config-path">{appConfig.configPath}</div> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {showFilterCreator ? (
+        <div className="quick-edit-layer">
+          <button type="button" className="quick-edit-scrim" onClick={() => {
+            setShowFilterCreator(null);
+            setNewFilterDraft("");
+            setPendingSprintAssignmentItemId(null);
+          }} aria-label="Close creator" />
+          <div
+            className="epic-overlay filter-overlay"
+            style={{ left: `${showFilterCreator.x}px`, top: `${showFilterCreator.y}px` }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">New {showFilterCreator.kind}</p>
+            <input
+                type={showFilterCreator.kind === "sprint" ? "number" : "text"}
+                inputMode={showFilterCreator.kind === "sprint" ? "numeric" : undefined}
+                min={showFilterCreator.kind === "sprint" ? 1 : undefined}
+                step={showFilterCreator.kind === "sprint" ? 1 : undefined}
+                value={newFilterDraft}
+                placeholder={showFilterCreator.kind === "epic" ? "Epic name" : showFilterCreator.kind === "owner" ? "Owner name" : "Sprint number"}
+                onChange={(event) => setNewFilterDraft(event.target.value)}
+                autoFocus
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    createFilterOption();
+                  }
+                  if (event.key === "Escape") {
+                    setShowFilterCreator(null);
+                    setNewFilterDraft("");
+                    setPendingSprintAssignmentItemId(null);
+                  }
+                }}
+              />
+            <div className="epic-overlay-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setShowFilterCreator(null);
+                  setNewFilterDraft("");
+                  setPendingSprintAssignmentItemId(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={showFilterCreator.kind === "sprint"
+                  ? !/^\d+$/.test(newFilterDraft.trim()) || Number(newFilterDraft.trim()) < 1
+                  : newFilterDraft.trim().length === 0}
+                onClick={createFilterOption}
+              >
+                Add {showFilterCreator.kind}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {quickEdit ? (
+        <div className="quick-edit-layer">
+          <button type="button" className="quick-edit-scrim" onClick={() => setQuickEdit(null)} aria-label="Close quick editor" />
+          <div
+            className="quick-edit-popover"
+            style={{ left: `${quickEdit.x}px`, top: `${quickEdit.y}px` }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="eyebrow">{quickEdit.field === "dueDate" ? "Edit due date" : quickEdit.field === "sprintAssigned" ? "Change Sprint" : `Edit ${quickEdit.field}`}</p>
+            {quickEdit.field === "summary" ? (
+              <textarea
+                rows={4}
+                value={quickEdit.value}
+                onChange={(event) => setQuickEdit({ ...quickEdit, value: event.target.value })}
+                onKeyDown={handleQuickEditKeyDown}
+                autoFocus
+              />
+            ) : quickEdit.field === "priority" ? (
+              <select
+                value={quickEdit.value}
+                onChange={(event) => setQuickEdit({ ...quickEdit, value: event.target.value })}
+                autoFocus
+              >
+                {PRIORITIES.map((priority) => (
+                  <option key={priority} value={priority}>{priority}</option>
+                ))}
+              </select>
+            ) : quickEdit.field === "effort" ? (
+              <select
+                value={quickEdit.value}
+                onChange={(event) => setQuickEdit({ ...quickEdit, value: event.target.value })}
+                autoFocus
+              >
+                {EFFORTS.map((effort) => (
+                  <option key={effort} value={effort}>{effort}</option>
+                ))}
+              </select>
+            ) : quickEdit.field === "status" ? (
+              <select
+                value={quickEdit.value}
+                onChange={(event) => setQuickEdit({ ...quickEdit, value: event.target.value })}
+                autoFocus
+              >
+                {STATUSES.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            ) : quickEdit.field === "dueDate" ? (
+              <input
+                type="date"
+                value={quickEdit.value}
+                onChange={(event) => setQuickEdit({ ...quickEdit, value: event.target.value })}
+                onKeyDown={handleQuickEditKeyDown}
+                autoFocus
+              />
+            ) : quickEdit.field === "sprintAssigned" ? (
+              <select
+                value={quickEdit.value}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  if (nextValue === "__new__") {
+                    setQuickEdit(null);
+                    openFilterCreator("sprint", event, { assignSprintItemId: quickEdit.itemId });
+                    return;
+                  }
+                  setQuickEdit({ ...quickEdit, value: nextValue });
+                }}
+                autoFocus
+              >
+                <option value="">No sprint</option>
+                {availableSprintTargets.map((sprint) => (
+                  <option key={sprint} value={sprint}>{sprint}</option>
+                ))}
+                <option value="__new__">New sprint</option>
+              </select>
+            ) : (
+              <input
+                value={quickEdit.value}
+                onChange={(event) => setQuickEdit({ ...quickEdit, value: event.target.value })}
+                onKeyDown={handleQuickEditKeyDown}
+                autoFocus
+              />
+            )}
+            <div className="quick-edit-actions">
+              {quickEdit.field === "dueDate" || quickEdit.field === "sprintAssigned" ? (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setQuickEdit({ ...quickEdit, value: "" })}
+                >
+                  Remove
+                </button>
+              ) : null}
+              <button type="button" className="ghost-button" onClick={() => setQuickEdit(null)}>Cancel</button>
+              <button type="button" className="primary-button" onClick={() => void saveQuickEdit()}>Save</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="epic-filter-strip">
         <div className="board-controls">
@@ -1055,31 +1909,231 @@ function App() {
           <div className="filter-switchers">
             <label className="epic-switcher">
               <span className="meta-label">Epic</span>
-              <select
-                value={selectedEpic}
-                onChange={(event) => setSelectedEpic(event.target.value)}
-              >
-                {epicOptions.map((epic) => (
-                  <option key={epic} value={epic}>
-                    {epicOptionLabels.get(epic) ?? epic}
-                  </option>
-                ))}
-              </select>
+              <div className="filter-select-row">
+                <select
+                  value={selectedEpic}
+                  onChange={(event) => setSelectedEpic(event.target.value)}
+                >
+                  {epicOptions.map((epic) => (
+                    <option key={epic} value={epic}>
+                      {epicOptionLabels.get(epic) ?? epic}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="epic-add-button"
+                  onClick={(event) => openFilterCreator("epic", event)}
+                  aria-label="Create epic filter"
+                >
+                  +
+                </button>
+              </div>
             </label>
             <label className="epic-switcher owner-switcher">
               <span className="meta-label">Owner</span>
-              <select
-                value={selectedOwner}
-                onChange={(event) => setSelectedOwner(event.target.value)}
-              >
-                {ownerOptions.map((owner) => (
-                  <option key={owner} value={owner}>
-                    {owner}
-                  </option>
-                ))}
-              </select>
+              <div className="filter-select-row">
+                <select
+                  value={selectedOwner}
+                  onChange={(event) => setSelectedOwner(event.target.value)}
+                >
+                  {ownerOptions.map((owner) => (
+                    <option key={owner} value={owner}>
+                      {owner}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="epic-add-button"
+                  onClick={(event) => openFilterCreator("owner", event)}
+                  aria-label="Create owner filter"
+                >
+                  +
+                </button>
+              </div>
+            </label>
+            <label className="epic-switcher sprint-switcher">
+              <span className="meta-label">Sprint</span>
+              <div className="sprint-select-row">
+                <select
+                  value={selectedSprint}
+                  onChange={(event) => setSelectedSprint(event.target.value)}
+                >
+                  {sprintOptions.map((sprint) => (
+                    <option key={sprint} value={sprint}>
+                      {sprint}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="epic-add-button"
+                  onClick={(event) => openFilterCreator("sprint", event)}
+                  aria-label="Create sprint"
+                >
+                  +
+                </button>
+              </div>
+            </label>
+            <label className="epic-switcher text-filter-switcher">
+              <span className="meta-label">Text</span>
+              <div className="filter-text-row">
+                <input
+                  type="text"
+                  value={textFilter}
+                  onChange={(event) => setTextFilter(event.target.value)}
+                  placeholder="Filter tickets"
+                  aria-label="Text filter"
+                />
+                <button
+                  type="button"
+                  className="icon-button text-filter-clear"
+                  aria-label="Clear text filter"
+                  title="Clear"
+                  disabled={!textFilter}
+                  onClick={() => setTextFilter("")}
+                >
+                  {closeIcon()}
+                </button>
+              </div>
             </label>
           </div>
+        </div>
+      </section>
+
+      <section className="current-sprint-section">
+        <div
+          className="current-sprint-panel"
+          onDragOver={(event) => {
+            if (currentSprintCollapsed || !data || !draggingId) return;
+            event.preventDefault();
+          }}
+          onDrop={async () => {
+            if (currentSprintCollapsed || !data || !draggingId) return;
+            const item = data.document.items.find((candidate) => candidate.id === draggingId);
+            if (!item) return;
+            try {
+              const effectiveSprint = currentSprintSelection;
+              setCurrentSprintTarget(effectiveSprint);
+              if (!availableSprintTargets.includes(effectiveSprint)) {
+                setCustomSprintOptions((current) =>
+                  current.includes(effectiveSprint) ? current : [...current, effectiveSprint],
+                );
+              }
+              await assignItemToSprint(item, effectiveSprint);
+            } catch (caught) {
+              setError((caught as Error).message);
+            } finally {
+              setDraggingId(null);
+              setDragSource("board");
+            }
+          }}
+        >
+          <div className={`current-sprint-header ${currentSprintCollapsed ? "is-collapsed" : ""}`}>
+            <button
+              type="button"
+              className="current-sprint-toggle"
+              onClick={() => setCurrentSprintCollapsed((current) => !current)}
+              aria-expanded={!currentSprintCollapsed}
+              aria-label={currentSprintCollapsed ? "Expand current sprint" : "Collapse current sprint"}
+            >
+              <span className="current-sprint-toggle-icon" aria-hidden="true">
+                {currentSprintCollapsed ? <ChevronRight strokeWidth={1.9} /> : <ChevronDown strokeWidth={1.9} />}
+              </span>
+              <span className="current-sprint-heading">
+                <span className="eyebrow">Current Sprint</span>
+                {!currentSprintCollapsed ? (
+                  <span className="current-sprint-selector-row">
+                    <select
+                      value={currentSprintSelection}
+                      onChange={(event) => setCurrentSprintTarget(event.target.value)}
+                      aria-label="Current sprint"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {(availableSprintTargets.length ? availableSprintTargets : ["Sprint 1"]).map((sprint) => (
+                        <option key={sprint} value={sprint}>
+                          {sprint}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                ) : null}
+              </span>
+            </button>
+            <div className="metrics-row sprint-metrics-row">
+              <div className="metric-card metric-card--plain">
+                <span className="meta-label">Stories</span>
+                <div className="metric-value">{currentSprintItems.length}</div>
+              </div>
+              <div className="metric-card metric-card--plain">
+                <span className="meta-label">Effort</span>
+                <div className="metric-value">{currentSprintEffort}</div>
+              </div>
+            </div>
+          </div>
+          {!currentSprintCollapsed ? <div className="current-sprint-dropzone">
+            <div className="current-sprint-cards">
+              {currentSprintItems.length === 0 ? (
+                <div className="lane-empty current-sprint-empty">
+                  {availableSprintTargets.length === 0
+                    ? "Drag a story here to start Sprint 1 automatically."
+                    : "Drag stories here to assign them to the current sprint."}
+                </div>
+              ) : (
+                currentSprintItems.map((item) => (
+                  <article
+                    key={`sprint-${item.id}`}
+                    className="story-card sprint-story-card"
+                    draggable
+                    onDragStart={() => {
+                      setDraggingId(item.id);
+                      setDragSource("sprint");
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDragSource("board");
+                    }}
+                    onClick={() => openEditor(item)}
+                  >
+                    <button
+                      type="button"
+                      className="sprint-card-remove"
+                      aria-label={`Remove ${item.id} from ${currentSprintSelection}`}
+                      title="Remove from current sprint"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void assignItemToSprint(item, "").catch((caught) => setError((caught as Error).message));
+                      }}
+                    >
+                      {closeIcon()}
+                    </button>
+                    <div className="story-topline">
+                      <button type="button" className={`priority-chip quick-edit-trigger ${item.priority.toLowerCase()}`} onClick={(event) => openQuickEditor(item, "priority", event)}>{item.priority}</button>
+                      <button type="button" className={`effort-chip quick-edit-trigger effort-${item.effort}`} onClick={(event) => openQuickEditor(item, "effort", event)}>Effort {item.effort}</button>
+                      <span className="story-id">{item.id}</span>
+                    </div>
+                    <button type="button" className="story-title-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "title", event)}>{item.title}</button>
+                    <button type="button" className="story-summary-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "summary", event)}>{item.summary || "Add summary"}</button>
+                    <div className="story-meta-line">
+                      <button type="button" className="story-pill story-pill--owner quick-edit-trigger" onClick={(event) => openQuickEditor(item, "owner", event)}>{item.owner}</button>
+                      <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)}>{item.status}</button>
+                      <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
+                      <button type="button" className="story-pill story-pill--due quick-edit-trigger" onClick={(event) => openQuickEditor(item, "dueDate", event)}>{item.dueDate ? `Due ${formatDueDate(item.dueDate)}` : "Add due"}</button>
+                    </div>
+                    <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
+                  </article>
+                ))
+              )}
+            </div>
+            <div className={`current-sprint-affordance ${dragSource === "board" && draggingId ? "is-active" : ""}`}>
+              <div className="current-sprint-affordance-inner">
+                <span className="current-sprint-affordance-label">Drop to assign</span>
+                <strong>{currentSprintSelection}</strong>
+              </div>
+            </div>
+          </div> : null}
         </div>
       </section>
 
@@ -1095,13 +2149,21 @@ function App() {
               onDrop={async () => {
                 if (!draggingId || !data) return;
                 const item = data.document.items.find((candidate) => candidate.id === draggingId);
-                if (!item || item.status === status) return;
+                if (!item) return;
                 try {
+                  if (dragSource === "sprint") {
+                    if (item.sprintAssigned) {
+                      await assignItemToSprint(item, "");
+                    }
+                    return;
+                  }
+                  if (item.status === status) return;
                   await moveItem(item, status);
                 } catch (caught) {
                   setError((caught as Error).message);
                 } finally {
                   setDraggingId(null);
+                  setDragSource("board");
                 }
               }}
             >
@@ -1123,25 +2185,34 @@ function App() {
                       {items.map((item) => (
                         <article
                           key={item.id}
-                          className="story-card"
+                          className={`story-card ${item.sprintAssigned === currentSprintSelection ? "story-card--current-sprint" : ""}`}
                           draggable
-                          onDragStart={() => setDraggingId(item.id)}
+                          onDragStart={() => {
+                            setDraggingId(item.id);
+                            setDragSource("board");
+                          }}
+                          onDragEnd={() => {
+                            setDraggingId(null);
+                            setDragSource("board");
+                          }}
                           onClick={() => openEditor(item)}
                         >
                           <div className="story-topline">
-                            <span className={`priority-chip ${item.priority.toLowerCase()}`}>
+                            <button type="button" className={`priority-chip quick-edit-trigger ${item.priority.toLowerCase()}`} onClick={(event) => openQuickEditor(item, "priority", event)}>
                               {item.priority}
-                            </span>
+                            </button>
+                            <button type="button" className={`effort-chip quick-edit-trigger effort-${item.effort}`} onClick={(event) => openQuickEditor(item, "effort", event)}>
+                              Effort {item.effort}
+                            </button>
                             <span className="story-id">{item.id}</span>
                           </div>
-                          <h3>{item.title}</h3>
-                          <p>{item.summary}</p>
+                          <button type="button" className="story-title-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "title", event)}>{item.title}</button>
+                          <button type="button" className="story-summary-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "summary", event)}>{item.summary || "Add summary"}</button>
                           <div className="story-meta-line">
-                            <span className="story-pill story-pill--owner">{item.owner}</span>
-                            <span className="story-pill story-pill--status">{item.status}</span>
-                            {item.dueDate ? (
-                              <span className="story-pill story-pill--due">Due {formatDueDate(item.dueDate)}</span>
-                            ) : null}
+                            <button type="button" className="story-pill story-pill--owner quick-edit-trigger" onClick={(event) => openQuickEditor(item, "owner", event)}>{item.owner}</button>
+                            <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)}>{item.status}</button>
+                            <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
+                            <button type="button" className="story-pill story-pill--due quick-edit-trigger" onClick={(event) => openQuickEditor(item, "dueDate", event)}>{item.dueDate ? `Due ${formatDueDate(item.dueDate)}` : "Add due"}</button>
                           </div>
                           <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
                         </article>
@@ -1376,6 +2447,35 @@ function App() {
                 </select>
               </label>
               <label>
+                Effort
+                <select
+                  value={editor.effort}
+                  onChange={(event) =>
+                    setEditor({ ...editor, effort: Number(event.target.value) as BacklogItem["effort"] })
+                  }
+                >
+                  {EFFORTS.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {effort}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Sprint Assigned
+                <select
+                  value={editor.sprintAssigned}
+                  onChange={(event) => setEditor({ ...editor, sprintAssigned: event.target.value })}
+                >
+                  <option value="">None</option>
+                  {sprintOptions.filter((sprint) => sprint !== ALL_SPRINTS && sprint !== UNASSIGNED_SPRINT).map((sprint) => (
+                    <option key={sprint} value={sprint}>
+                      {sprint}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Owner
                 <input
                   value={editor.owner}
@@ -1535,8 +2635,9 @@ function App() {
                 type="button"
                 className="primary-button"
                 onClick={() => {
-                  setRecentBacklogs(removeRecentBacklog(missingBacklogNotice.path));
-                  setMissingBacklogNotice(null);
+                  void removeRecentBacklogConfig(missingBacklogNotice.path)
+                    .then(() => setMissingBacklogNotice(null))
+                    .catch((caught) => setError((caught as Error).message));
                 }}
               >
                 Remove chip
@@ -1546,10 +2647,23 @@ function App() {
         </div>
       ) : null}
 
-      {showPaulaPanel ? (
+      {showPaulaPanel ? (() => {
+        const currentBacklogPath = data?.path ?? null;
+        const isAgentBacklogMismatch = Boolean(
+          currentBacklogPath &&
+          agentSessionBacklogPath &&
+          currentBacklogPath !== agentSessionBacklogPath,
+        );
+
+        return (
         <div
-          className="floating-paula-panel"
-          style={{ left: `${paulaPanelPosition.x}px`, top: `${paulaPanelPosition.y}px` }}
+          className={`floating-paula-panel ${paulaPanelExpanded ? "is-expanded" : ""}`}
+          style={{
+            left: `${paulaPanelPosition.x}px`,
+            top: `${paulaPanelPosition.y}px`,
+            width: `${paulaPanelSize(paulaPanelExpanded).width}px`,
+            height: `${paulaPanelSize(paulaPanelExpanded).height}px`,
+          }}
         >
           <div
             className="floating-paula-header"
@@ -1558,21 +2672,59 @@ function App() {
             onPointerUp={onPaulaPointerUp}
           >
             <span className="meta-label">Tell Paula What To Do</span>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Close Paula panel"
-              title="Close"
-              onClick={() => setShowPaulaPanel(false)}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              {closeIcon()}
-            </button>
+            <div className="paula-header-actions">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={paulaPanelExpanded ? "Minimise Paula panel" : "Maximise Paula panel"}
+                title={paulaPanelExpanded ? "Minimise" : "Maximise"}
+                onClick={togglePaulaPanelExpanded}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {paulaPanelExpanded ? minimizeIcon() : maximizeIcon()}
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close Paula panel"
+                title="Close"
+                onClick={() => setShowPaulaPanel(false)}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {closeIcon()}
+              </button>
+            </div>
           </div>
-          <AgentTerminal backlogPath={data?.path} onStatusChange={setAgentStatus} />
-          {agentStatus ? <span className="agent-status">{agentStatus}</span> : null}
+          {data?.path ? (
+            <AgentTerminal
+              backlogPath={data.path}
+              agentCommand={appConfig?.agentCommand}
+              configVersion={agentConfigVersion}
+              onStatusChange={setAgentStatus}
+              onSessionPathChange={setAgentSessionBacklogPath}
+            />
+          ) : (
+            <div className="agent-surface">
+              <div className="agent-panel-body">
+                <section className="agent-chat-panel is-active">
+                  <div className="agent-chat-scroll">
+                    <article className="agent-message agent-message--agent">
+                      <p>Open a backlog file to start Paula.</p>
+                    </article>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+          {agentStatus ? (
+            <div className={`agent-status ${isAgentBacklogMismatch ? "is-mismatch" : ""}`}>
+              {isAgentBacklogMismatch ? <span className="agent-status-alert" aria-hidden="true">!</span> : null}
+              <span>{agentStatus}</span>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        );
+      })() : null}
 
       <button
         type="button"
@@ -1598,7 +2750,14 @@ function App() {
       <button
         type="button"
         className="floating-add-button"
-        onClick={() => openEditor({ ...EMPTY_ITEM })}
+        disabled={!data?.path}
+        onClick={() => {
+          if (!data?.path) {
+            setError("Open a backlog file before creating stories.");
+            return;
+          }
+          openEditor({ ...EMPTY_ITEM });
+        }}
         aria-label="New story"
         title="New story"
       >
