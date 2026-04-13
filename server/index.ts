@@ -257,6 +257,11 @@ function commandExists(command: string) {
   return result.status === 0;
 }
 
+function isUnavailableBacklogError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR" || code === "EACCES";
+}
+
 async function validateBacklogPath(filePath: string) {
   const stat = await fs.stat(filePath);
   if (!stat.isFile()) {
@@ -375,6 +380,15 @@ app.get("/api/backlog", async (_request, response) => {
   } catch (error) {
     if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
       response.status(404).json({ message: "No backlog file is loaded." });
+      return;
+    }
+    if (isUnavailableBacklogError(error)) {
+      setBacklogFile(null);
+      bindBacklogWatcher(null);
+      closeActiveTerminalSession();
+      response.status(404).json({
+        message: "The selected backlog file cannot be opened because the saved path is no longer valid.",
+      });
       return;
     }
     response.status(500).json({ message: (error as Error).message });

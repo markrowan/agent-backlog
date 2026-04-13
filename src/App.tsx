@@ -87,6 +87,8 @@ const DEFAULT_SORT_DIRECTIONS: Record<SortKey, SortDirection> = {
   lastUpdated: "desc",
 };
 
+const NO_BACKLOG_LOADED_MESSAGE = "No backlog file is loaded.";
+
 interface RecentBacklog {
   path: string;
   displayName: string;
@@ -252,6 +254,14 @@ function defaultPaulaPanelPosition(expanded = false) {
   const x = Math.max(16, window.innerWidth - size.width - 28);
   const y = Math.max(16, window.innerHeight - size.height - 172);
   return { x, y };
+}
+
+function backlogUnavailableMessage(payload: { message?: string } | null) {
+  const message = payload?.message?.trim();
+  if (!message || message === NO_BACKLOG_LOADED_MESSAGE) {
+    return null;
+  }
+  return message;
 }
 
 function centeredEditorPosition() {
@@ -548,20 +558,23 @@ function App() {
 
     try {
       const backlogResponse = await fetch("/api/backlog");
+      const payload = (await backlogResponse.json().catch(() => null)) as { message?: string } | null;
 
       if (backlogResponse.status === 404) {
         setData(null);
         setTitleDraft("");
         latestVersionRef.current = null;
-        setError("The selected backlog file cannot be opened because the saved path is no longer valid.");
+        setAgentStatus(null);
+        setAgentSessionBacklogPath(null);
+        setError(backlogUnavailableMessage(payload));
         return;
       }
 
       if (!backlogResponse.ok) {
-        throw new Error("Failed to load backlog");
+        throw new Error(payload?.message ?? "Failed to load backlog");
       }
 
-      const backlog = (await backlogResponse.json()) as BacklogResponse;
+      const backlog = payload as BacklogResponse;
       setData(backlog);
       setTitleDraft(backlog.document.title);
       latestVersionRef.current = backlog.version;
@@ -626,16 +639,18 @@ function App() {
     const refreshFromDisk = async () => {
       try {
         const backlogResponse = await fetch("/api/backlog");
+        const payload = (await backlogResponse.json().catch(() => null)) as { message?: string } | null;
         if (backlogResponse.status === 404) {
           setData(null);
           setTitleDraft("");
           latestVersionRef.current = null;
           setAgentStatus(null);
-          setError("The selected backlog file cannot be opened because the saved path is no longer valid.");
+          setAgentSessionBacklogPath(null);
+          setError(backlogUnavailableMessage(payload));
           return;
         }
         if (!backlogResponse.ok) return;
-        const backlog = (await backlogResponse.json()) as BacklogResponse;
+        const backlog = payload as BacklogResponse;
         if (
           latestVersionRef.current === null ||
           Math.trunc(backlog.version) !== Math.trunc(latestVersionRef.current)
