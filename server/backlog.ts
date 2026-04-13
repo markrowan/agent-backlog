@@ -160,7 +160,8 @@ export function parseBacklog(rawInput: string): BacklogDocument {
     if (currentBlock.length === 0) return;
     const item = toItem(currentBlock, currentEpic);
     if (item) {
-      item.status = currentLane ?? item.status;
+      // Trust the explicit story field when it is present; lane placement may be stale.
+      item.status = item.status ?? currentLane ?? "Inbox";
       items.push(item);
     }
     currentBlock = [];

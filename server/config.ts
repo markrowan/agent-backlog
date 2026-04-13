@@ -13,10 +13,12 @@ export interface AppConfig {
   recentBacklogs: RecentBacklogConfigEntry[];
 }
 
-export const DEFAULT_AGENT_COMMAND = 'codex --no-alt-screen --add-dir "$BACKLOG_DIR"';
+export const DEFAULT_AGENT_COMMAND = 'codex --no-alt-screen -a never -s danger-full-access --add-dir "$BACKLOG_DIR" "$BACKLOG_BOOTSTRAP"';
 
 const LEGACY_DEFAULT_AGENT_COMMANDS = new Map([
+  ['codex --no-alt-screen --add-dir "$BACKLOG_DIR"', DEFAULT_AGENT_COMMAND],
   ['codex --no-alt-screen --add-dir "$BACKLOG_DIR" "$BACKLOG_BOOTSTRAP"', DEFAULT_AGENT_COMMAND],
+  ['codex --no-alt-screen -a never -s danger-full-access --add-dir "$BACKLOG_DIR" "$BACKLOG_BOOTSTRAP"', DEFAULT_AGENT_COMMAND],
   ['claude "$BACKLOG_BOOTSTRAP"', 'claude'],
   ['aider --yes "$BACKLOG_FILE" --message "$BACKLOG_BOOTSTRAP"', 'aider --yes "$BACKLOG_FILE"'],
   ['gemini -p "$BACKLOG_BOOTSTRAP"', 'gemini'],

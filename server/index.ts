@@ -31,6 +31,11 @@ const app = express();
 const port = Number(process.env.PORT ?? 4177);
 const sseClients = new Set<express.Response>();
 let backlogWatcher: FSWatcher | null = null;
+let backlogWatchPoll: NodeJS.Timeout | null = null;
+let watchedBacklogPath: string | null = null;
+let watchedBacklogDirectory: string | null = null;
+let watchedBacklogBaseName: string | null = null;
+let watchedBacklogVersion: number | null = null;
 const server = http.createServer(app);
 const wsServer = new WebSocketServer({ server, path: "/api/agent/terminal" });
 
@@ -57,24 +62,78 @@ function agentCommandAvailable(command: string) {
 
 function broadcastBacklogChanged() {
   for (const client of sseClients) {
-    client.write(`event: backlog-changed\n`);
-    client.write(`data: ${JSON.stringify({ changed: true, at: Date.now() })}\n\n`);
+    client.write(`event: backlog-changed
+`);
+    client.write(`data: ${JSON.stringify({ changed: true, at: Date.now() })}
+
+`);
+  }
+}
+
+async function refreshWatchedBacklogVersion(filePath: string) {
+  try {
+    const stat = await fs.stat(filePath);
+    watchedBacklogVersion = stat.mtimeMs;
+    return stat.mtimeMs;
+  } catch {
+    watchedBacklogVersion = null;
+    return null;
+  }
+}
+
+async function broadcastBacklogChangedIfNeeded() {
+  if (!watchedBacklogPath) {
+    return;
+  }
+
+  try {
+    const stat = await fs.stat(watchedBacklogPath);
+    if (watchedBacklogVersion === null || Math.trunc(stat.mtimeMs) !== Math.trunc(watchedBacklogVersion)) {
+      watchedBacklogVersion = stat.mtimeMs;
+      broadcastBacklogChanged();
+    }
+  } catch {
+    if (watchedBacklogVersion !== null) {
+      watchedBacklogVersion = null;
+      broadcastBacklogChanged();
+    }
   }
 }
 
 function bindBacklogWatcher(filePath: string | null) {
   backlogWatcher?.close();
   backlogWatcher = null;
+  if (backlogWatchPoll) {
+    clearInterval(backlogWatchPoll);
+    backlogWatchPoll = null;
+  }
+  watchedBacklogPath = null;
+  watchedBacklogDirectory = null;
+  watchedBacklogBaseName = null;
+  watchedBacklogVersion = null;
 
   if (!filePath) {
     return;
   }
 
-  backlogWatcher = watch(filePath, { persistent: false }, () => {
-    broadcastBacklogChanged();
-  });
-}
+  watchedBacklogPath = filePath;
+  watchedBacklogDirectory = path.dirname(filePath);
+  watchedBacklogBaseName = path.basename(filePath);
 
+  void refreshWatchedBacklogVersion(filePath);
+
+  backlogWatcher = watch(watchedBacklogDirectory, { persistent: false }, (_eventType, changedName) => {
+    const nextName = changedName ? String(changedName) : null;
+    if (!watchedBacklogBaseName || (nextName && nextName !== watchedBacklogBaseName)) {
+      return;
+    }
+    void broadcastBacklogChangedIfNeeded();
+  });
+
+  backlogWatchPoll = setInterval(() => {
+    void broadcastBacklogChangedIfNeeded();
+  }, 1500);
+}
 bindBacklogWatcher(getBacklogFile());
 void readConfig();
 
@@ -107,6 +166,8 @@ async function agentBootstrapPrompt(backlogPath: string) {
     `Backlog file to manage: ${backlogPath}`,
     "Start by reading AGENTS.md in this repo if present.",
     "For chat rendering, prefix every user-visible reply line with exactly: PAULA>> ",
+    "You have explicit permission in this session to edit the selected backlog file directly.",
+    "You have explicit permission in this session to run a timestamp command such as date -u +%Y-%m-%dT%H:%M:%SZ when updating the Updated field.",
     "Stay in this Codex session, but do not take any backlog action until the user gives the first instruction after your short welcome.",
   ].join("\n\n");
 }
@@ -153,12 +214,22 @@ async function ensureTerminalSession(options?: { restart?: boolean }) {
   };
   activeTerminalSession = session;
 
-  // Send the bootstrap as real terminal input after the agent process starts, rather than
-  // relying on command-line prompt staging that leaves the text unsent in some terminals.
-  globalThis.setTimeout(() => {
-    if (activeTerminalSession?.id !== session.id) return;
-    submitTerminalInput(ptyProcess, bootstrap);
-  }, 900);
+  broadcastTerminal({
+    type: "session",
+    sessionId: session.id,
+    backlogPath: backlog.path,
+    agentCommand,
+  });
+
+  const bootstrapsFromCommand = agentCommand.includes('$BACKLOG_BOOTSTRAP');
+
+  if (!bootstrapsFromCommand) {
+    // Fallback for agent launchers that do not accept an initial prompt argument.
+    globalThis.setTimeout(() => {
+      if (activeTerminalSession?.id !== session.id) return;
+      submitTerminalInput(ptyProcess, bootstrap);
+    }, 900);
+  }
 
   ptyProcess.onData((data) => {
     if (activeTerminalSession?.id !== session.id) return;
@@ -174,13 +245,6 @@ async function ensureTerminalSession(options?: { restart?: boolean }) {
       signal,
     });
     activeTerminalSession = null;
-  });
-
-  broadcastTerminal({
-    type: "session",
-    sessionId: session.id,
-    backlogPath: backlog.path,
-    agentCommand,
   });
 
   return session;

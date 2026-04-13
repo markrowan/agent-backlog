@@ -6,6 +6,7 @@ interface AgentTerminalProps {
   agentCommand?: string;
   backlogPath?: string;
   configVersion?: number;
+  filterContext?: string;
   onStatusChange?: (status: string | null) => void;
   onSessionPathChange?: (path: string | null) => void;
 }
@@ -26,7 +27,9 @@ function websocketUrl() {
 }
 
 function stripAnsi(value: string) {
-  return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/gi, "");
+  return value
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/gi, "");
 }
 
 function scrollTerminalToBottom(terminal: Terminal) {
@@ -41,7 +44,10 @@ function scrollTerminalToBottom(terminal: Terminal) {
 
 function normalizeChatText(value: string) {
   return stripAnsi(value)
-    .replace(/\u0000/g, "")
+    .replace(/[\u0000\u0007]/g, "")
+    .replace(/[␛␇]/g, "")
+    .replace(/[▎▏]/g, "\n")
+    .replace(/\n---+\n/g, "\n")
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n");
 }
@@ -54,10 +60,32 @@ function sanitizeAssistantLine(value: string) {
     .trim();
 }
 
+function sanitizeUserChatMessage(value: string) {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .filter((line) => {
+      const normalized = line.trim().replace(/^>\s*/, "").trim().toLowerCase();
+      return normalized !== "implement {feature}";
+    })
+    .join("\n")
+    .trim();
+}
+
 function stripPromptArtifacts(value: string) {
   return value
-    .replace(/\s+gpt-[\w.-]+\s+(?:low|medium|high|xhigh)\s+Context\s+\[[^\]]*\].*$/i, "")
+    .replace(/[\u0000\u0007]/g, "")
+    .replace(/[␛␇]/g, "")
+    .replace(/[▎▏].*$/u, "")
+    .replace(/\s*---+\s*$/u, "")
+    .replace(/(?:^|\s)›.*$/u, "")
+    .replace(/\s*Context\s*update:.*$/i, "")
+    .replace(/\s*Contextupdate:.*$/i, "")
+    .replace(/\s+[⠁-⣿▏▎▍▌▋▊▉█].*$/u, "")
+    .replace(/\s+gpt-[\w.-]+\s+(?:low|medium|high|xhigh)(?:\s+·)?\s+Context\s+\[[^\]]*\].*$/i, "")
     .replace(/\s+(?:approval|sandbox|cwd|model):.*$/i, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -68,30 +96,27 @@ function extractPaulaMessage(line: string) {
   return message || null;
 }
 
-function shouldIgnoreChatLine(line: string) {
-  return /^(OpenAI Codex|model:|cwd:|approval:|sandbox:|session id:|--------|\[[^\]]+\]|thinking|working|planning|gpt-[\w.-]+\s+(?:low|medium|high|xhigh)\b|Context\s+\[[^\]]*\]|~\/.*)$/i.test(
-    line,
-  );
-}
-
 function shouldShowTerminal(line: string) {
-  return /(login|authenticate|approval|approve|request(?:ing)? permission|request(?:ing)? approval|grant access|allow access|needs? approval|needs? permission|permission required|permission denied|access denied|auth(?:entication)? required|continue\?\s*\[[^\]]+\]|confirm\?\s*\[[^\]]+\]|\[[yYnN]\/[^\]]+\]|press enter|open a browser|error:|failed:|exception)/i.test(
+  return /(request(?:ing)? permission|request(?:ing)? approval|grant access|allow access|permission required|auth(?:entication)? required|login required|continue\?\s*\[[^\]]+\]|confirm\?\s*\[[^\]]+\]|\[[yYnN]\/[yYnN]\]|press enter(?: to continue)?|open a browser(?: to authenticate)?)/i.test(
     line,
   );
 }
 
-export default function AgentTerminal({ agentCommand, backlogPath, configVersion, onStatusChange, onSessionPathChange }: AgentTerminalProps) {
+export default function AgentTerminal({ agentCommand, backlogPath, configVersion, filterContext, onStatusChange, onSessionPathChange }: AgentTerminalProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const suppressOutputRef = useRef(true);
   const lineBufferRef = useRef("");
   const assistantBufferRef = useRef("");
   const assistantFlushTimerRef = useRef<number | null>(null);
-  const paulaContinuationRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const isUnmountingRef = useRef(false);
+  const authSwitchRef = useRef(false);
+  const lastFilterContextRef = useRef<string | null>(null);
+  const pendingFilterContextRef = useRef<string | null>(null);
   const pendingUserEchoesRef = useRef<string[]>([]);
   const outboundQueueRef = useRef<string[]>([]);
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
@@ -102,23 +127,14 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   function appendMessage(role: ChatRole, text: string) {
     const normalized = text.trim();
     if (!normalized) return;
-    setMessages((current) => {
-      const last = current[current.length - 1];
-      if (role === "agent" && last?.role === "agent") {
-        return [
-          ...current.slice(0, -1),
-          { ...last, text: normalized },
-        ];
-      }
-      return [
-        ...current,
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          role,
-          text: normalized,
-        },
-      ];
-    });
+    setMessages((current) => [
+      ...current,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role,
+        text: normalized,
+      },
+    ]);
   }
 
   function clearAssistantFlushTimer() {
@@ -132,7 +148,6 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     clearAssistantFlushTimer();
     const next = assistantBufferRef.current.trim();
     assistantBufferRef.current = "";
-    paulaContinuationRef.current = false;
     setIsAgentTyping(false);
     if (!next) return;
     appendMessage("agent", next);
@@ -147,23 +162,21 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
 
   function switchToTerminal(status: string) {
     flushAssistantBuffer();
+    authSwitchRef.current = true;
     setActiveTab("terminal");
     onStatusChange?.(status);
   }
 
   function consumeChatLine(rawLine: string) {
-    const line = sanitizeAssistantLine(rawLine);
-    if (!line) {
+    const raw = normalizeChatText(rawLine).trim();
+    if (!raw) {
       return;
     }
 
+    const line = sanitizeAssistantLine(raw);
     const pendingEcho = pendingUserEchoesRef.current[0];
     if (pendingEcho && line === pendingEcho) {
       pendingUserEchoesRef.current.shift();
-      return;
-    }
-
-    if (shouldIgnoreChatLine(line)) {
       return;
     }
 
@@ -172,11 +185,19 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       return;
     }
 
-    const paulaMessage = extractPaulaMessage(line);
+    if (!/^PAULA>>\s*/i.test(raw)) {
+      return;
+    }
+
+    const paulaMessage = extractPaulaMessage(raw);
     if (!paulaMessage) {
       return;
     }
 
+    if (authSwitchRef.current) {
+      authSwitchRef.current = false;
+      setActiveTab("chat");
+    }
     setIsAgentTyping(true);
 
     assistantBufferRef.current = assistantBufferRef.current
@@ -201,7 +222,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     assistantBufferRef.current = "";
     pendingUserEchoesRef.current = [];
     outboundQueueRef.current = [];
-    paulaContinuationRef.current = false;
+    pendingFilterContextRef.current = null;
     setDraft("");
     setMessages([]);
     setIsAgentTyping(false);
@@ -242,16 +263,24 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   }
 
   function sendChatMessage() {
-    const message = draft.trim();
-    if (!message) return;
+    const message = sanitizeUserChatMessage(draft);
+    if (!message) {
+      setDraft("");
+      return;
+    }
+
+    const deferredContext = pendingFilterContextRef.current?.trim();
+    const submittedMessage = deferredContext
+      ? `${deferredContext}\n\nUser request: ${message}`
+      : message;
 
     flushAssistantBuffer();
     appendMessage("user", message);
     pendingUserEchoesRef.current.push(message);
-    submitInput(message);
+    submitInput(submittedMessage);
+    pendingFilterContextRef.current = null;
     setDraft("");
   }
-
 
   useEffect(() => {
     chatScrollRef.current?.scrollTo({
@@ -259,6 +288,25 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       behavior: "smooth",
     });
   }, [messages, activeTab, isAgentTyping]);
+
+  useEffect(() => {
+    if (!backlogPath) {
+      lastFilterContextRef.current = null;
+      pendingFilterContextRef.current = null;
+      return;
+    }
+
+    if (lastFilterContextRef.current === null) {
+      lastFilterContextRef.current = filterContext ?? null;
+      return;
+    }
+
+    const nextContext = filterContext ?? null;
+    if (nextContext !== lastFilterContextRef.current) {
+      lastFilterContextRef.current = nextContext;
+      pendingFilterContextRef.current = nextContext;
+    }
+  }, [backlogPath, filterContext]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -283,13 +331,11 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     fitAddon.fit();
     terminalRef.current = terminal;
 
-    const socket = new WebSocket(websocketUrl());
-    socketRef.current = socket;
-
     const sendResize = () => {
+      const currentSocket = socketRef.current;
       fitAddon.fit();
-      if (socket.readyState !== WebSocket.OPEN) return;
-      socket.send(
+      if (!currentSocket || currentSocket.readyState !== WebSocket.OPEN) return;
+      currentSocket.send(
         JSON.stringify({
           type: "resize",
           cols: terminal.cols,
@@ -299,63 +345,71 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       scrollTerminalToBottom(terminal);
     };
 
-    socket.addEventListener("open", () => {
-      onStatusChange?.("Agent terminal connected.");
-      sendResize();
-    });
+    const connectSocket = () => {
+      const socket = new WebSocket(websocketUrl());
+      socketRef.current = socket;
 
-    socket.addEventListener("message", (event) => {
-      const payload = JSON.parse(String(event.data)) as
-        | { type: "output"; sessionId: string; data: string }
-        | { type: "session"; sessionId: string; backlogPath: string; agentCommand?: string }
-        | { type: "exit"; sessionId: string; exitCode: number; signal?: number };
+      socket.addEventListener("open", () => {
+        onStatusChange?.("Agent terminal connected.");
+        sendResize();
+      });
 
-      if (payload.type === "output") {
-        if (suppressOutputRef.current) {
+      socket.addEventListener("message", (event) => {
+        const payload = JSON.parse(String(event.data)) as
+          | { type: "output"; sessionId: string; data: string }
+          | { type: "session"; sessionId: string; backlogPath: string; agentCommand?: string }
+          | { type: "exit"; sessionId: string; exitCode: number; signal?: number };
+
+        if (payload.type === "output") {
+          terminal.write(payload.data, () => {
+            scrollTerminalToBottom(terminal);
+          });
+          processOutputForChat(payload.data);
           return;
         }
-        terminal.write(payload.data, () => {
+
+        if (payload.type === "session") {
+          if (payload.sessionId !== sessionIdRef.current) {
+            terminal.reset();
+          }
+          sessionIdRef.current = payload.sessionId;
+          flushOutboundQueue();
           scrollTerminalToBottom(terminal);
-        });
-        processOutputForChat(payload.data);
-        return;
-      }
-
-      if (payload.type === "session") {
-        if (payload.sessionId !== sessionIdRef.current) {
-          terminal.reset();
+          onSessionPathChange?.(payload.backlogPath);
+          onStatusChange?.(`Agent session attached to ${payload.backlogPath}.`);
+          return;
         }
-        suppressOutputRef.current = false;
-        sessionIdRef.current = payload.sessionId;
-        flushOutboundQueue();
+
+        flushAssistantBuffer();
+        terminal.writeln(`\r\n[Agent exited with code ${payload.exitCode}]`);
+        if (payload.exitCode !== 0) {
+          switchToTerminal(`Agent exited with code ${payload.exitCode}.`);
+        } else {
+          onStatusChange?.("Agent session exited.");
+        }
         scrollTerminalToBottom(terminal);
-        onSessionPathChange?.(payload.backlogPath);
-        onStatusChange?.(`Agent session attached to ${payload.backlogPath}.`);
-        return;
-      }
+      });
 
-      flushAssistantBuffer();
-      terminal.writeln(`\r\n[Agent exited with code ${payload.exitCode}]`);
-      if (payload.exitCode !== 0) {
-        switchToTerminal(`Agent exited with code ${payload.exitCode}.`);
-      } else {
-        onStatusChange?.("Agent session exited.");
-      }
-      scrollTerminalToBottom(terminal);
-    });
+      socket.addEventListener("close", () => {
+        if (isUnmountingRef.current) {
+          return;
+        }
+        onStatusChange?.("Reconnecting to agent session...");
+        onSessionPathChange?.(null);
+        reconnectTimerRef.current = window.setTimeout(() => {
+          connectSocket();
+        }, 350);
+      });
+    };
 
-    socket.addEventListener("close", () => {
-      onStatusChange?.("Agent terminal disconnected.");
-      onSessionPathChange?.(null);
-    });
+    connectSocket();
 
     const inputDisposable = terminal.onData((data) => {
       const submittedLine = data.includes("\r");
 
-      if (suppressOutputRef.current && submittedLine) {
-        suppressOutputRef.current = false;
-        terminal.reset();
-        scrollTerminalToBottom(terminal);
+      if (submittedLine && activeTab === "terminal") {
+        setIsAgentTyping(true);
+        onStatusChange?.("Waiting for Paula...");
       }
 
       sendInput(data);
@@ -373,11 +427,16 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     resizeObserver.observe(hostRef.current);
 
     return () => {
+      isUnmountingRef.current = true;
       clearAssistantFlushTimer();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       flushAssistantBuffer();
       inputDisposable.dispose();
       resizeObserver.disconnect();
-      socket.close();
+      socketRef.current?.close();
       socketRef.current = null;
       terminal.dispose();
       terminalRef.current = null;
@@ -406,6 +465,18 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     void (async () => {
       try {
         onStatusChange?.("Starting agent for this backlog…");
+
+        const selectResponse = await fetch("/api/backlog/select", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: backlogPath }),
+        });
+        const selectPayload = (await selectResponse.json().catch(() => null)) as { message?: string } | null;
+
+        if (!selectResponse.ok) {
+          throw new Error(selectPayload?.message ?? "Failed to reselect backlog before starting agent.");
+        }
+
         const response = await fetch("/api/agent/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -420,7 +491,6 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
         }
 
         if (cancelled) return;
-        suppressOutputRef.current = true;
         terminalRef.current?.reset();
         sessionIdRef.current = payload?.sessionId ?? null;
         resetChatState();

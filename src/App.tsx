@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Download, FolderOpen, Maximize2, Minimize2, PlusSquare, Settings2, Undo2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FolderOpen, Maximize2, Minimize2, PlusSquare, Settings2, Trash2, Undo2, X } from "lucide-react";
 import AgentTerminal from "./AgentTerminal";
 import {
   BacklogItem,
@@ -133,7 +133,7 @@ const AGENT_PRESETS: Array<{ id: AgentPresetId; label: string; command: string }
   {
     id: "codex",
     label: "Codex",
-    command: 'codex --no-alt-screen --add-dir "$BACKLOG_DIR"',
+    command: 'codex --no-alt-screen --add-dir "$BACKLOG_DIR" "$BACKLOG_BOOTSTRAP"',
   },
   {
     id: "claude-code",
@@ -411,6 +411,7 @@ function App() {
   const [sortDirections, setSortDirections] = useState<Record<SortKey, SortDirection>>({ ...DEFAULT_SORT_DIRECTIONS });
   const [draggingSortKey, setDraggingSortKey] = useState<SortKey | null>(null);
   const [dragOverSortKey, setDragOverSortKey] = useState<SortKey | null>(null);
+  const [expandedLane, setExpandedLane] = useState<Status | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [recentBacklogs, setRecentBacklogs] = useState<RecentBacklog[]>([]);
   const [missingBacklogNotice, setMissingBacklogNotice] = useState<MissingBacklogNotice | null>(null);
@@ -616,39 +617,6 @@ function App() {
   }, [data?.path, agentConfigVersion]);
 
   useEffect(() => {
-    if (!data?.path) return;
-
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const response = await fetch("/api/agent/context", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            selectedEpic,
-            selectedOwner,
-            selectedSprint,
-            textFilter,
-          }),
-        });
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-
-        if (!response.ok || cancelled) return;
-        if (payload?.message) {
-          setAgentStatus(payload.message);
-        }
-      } catch {
-        // Ignore transient context-sync failures.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [data?.path, selectedEpic, selectedOwner, selectedSprint, textFilter]);
-
-  useEffect(() => {
     const events = new EventSource("/api/backlog/events");
 
     const refreshFromDisk = async () => {
@@ -814,6 +782,19 @@ function App() {
     }
     return ["All owners", ...Array.from(owners).sort()];
   }, [customOwnerOptions, data]);
+
+  const deferredAgentContext = useMemo(() => {
+    const scopeParts = [
+      selectedEpic && selectedEpic !== "All epics" ? `epic: ${selectedEpic}` : null,
+      selectedOwner && selectedOwner !== "All owners" ? `owner: ${selectedOwner}` : null,
+      selectedSprint && selectedSprint !== ALL_SPRINTS ? `sprint: ${selectedSprint}` : null,
+      textFilter.trim() ? `text filter: "${textFilter.trim()}"` : null,
+    ].filter(Boolean);
+
+    return scopeParts.length
+      ? `Context update: current UI filters are ${scopeParts.join(", ")}. Treat these only as scope guidance and prioritization hints. You may still inspect or update other tickets in the same backlog when the user's request plausibly requires broader context or cross-ticket coordination.`
+      : "Context update: no narrowing UI filters are active. Treat the whole backlog as in scope unless the user says otherwise.";
+  }, [selectedEpic, selectedOwner, selectedSprint, textFilter]);
 
   const sprintOptions = useMemo(() => {
     const sprints = new Set<string>(customSprintOptions);
@@ -1955,7 +1936,7 @@ function App() {
             </label>
             <label className="epic-switcher sprint-switcher">
               <span className="meta-label">Sprint</span>
-              <div className="sprint-select-row">
+              <div className="filter-select-row sprint-select-row">
                 <select
                   value={selectedSprint}
                   onChange={(event) => setSelectedSprint(event.target.value)}
@@ -2058,7 +2039,9 @@ function App() {
                       ))}
                     </select>
                   </span>
-                ) : null}
+                ) : (
+                  <span className="current-sprint-name">{currentSprintSelection}</span>
+                )}
               </span>
             </button>
             <div className="metrics-row sprint-metrics-row">
@@ -2070,6 +2053,18 @@ function App() {
                 <span className="meta-label">Effort</span>
                 <div className="metric-value">{currentSprintEffort}</div>
               </div>
+              {!currentSprintCollapsed ? (
+                <button
+                  type="button"
+                  className="icon-button sprint-clear-button"
+                  aria-label="Clear sprint assignments"
+                  title="Clear sprint"
+                  disabled={!currentSprintItems.length}
+                  onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
+                >
+                  {trashIcon()}
+                </button>
+              ) : null}
             </div>
           </div>
           {!currentSprintCollapsed ? <div className="current-sprint-dropzone">
@@ -2077,7 +2072,7 @@ function App() {
               {currentSprintItems.length === 0 ? (
                 <div className="lane-empty current-sprint-empty">
                   {availableSprintTargets.length === 0
-                    ? "Drag a story here to start Sprint 1 automatically."
+                    ? "Drag a story here to assign it to the current sprint."
                     : "Drag stories here to assign them to the current sprint."}
                 </div>
               ) : (
@@ -2137,8 +2132,8 @@ function App() {
         </div>
       </section>
 
-      <main className="board">
-        {STATUSES.map((status) => {
+      <main className={`board ${expandedLane ? "board--lane-expanded" : ""}`}>
+        {(expandedLane ? [expandedLane] : STATUSES).map((status) => {
           const epicMap = grouped.get(status) ?? new Map<string, BacklogItem[]>();
           const epicEntries = Array.from(epicMap.entries());
           return (
@@ -2168,16 +2163,27 @@ function App() {
               }}
             >
               <div className="lane-header">
-                <h2>{status}</h2>
+                <div className="lane-header-title">
+                  <button
+                    type="button"
+                    className="lane-toggle"
+                    onClick={() => setExpandedLane((current) => (current === status ? null : status))}
+                    aria-label={expandedLane === status ? `Collapse ${status}` : `Expand ${status}`}
+                    title={expandedLane === status ? `Collapse ${status}` : `Expand ${status}`}
+                  >
+                    {expandedLane === status ? <ChevronDown strokeWidth={1.9} /> : <ChevronRight strokeWidth={1.9} />}
+                  </button>
+                  <h2>{status}</h2>
+                </div>
                 <span>{epicEntries.reduce((sum, [, items]) => sum + items.length, 0)}</span>
               </div>
 
-              <div className="lane-scroll">
+              <div className={`lane-scroll ${expandedLane === status ? "lane-scroll--expanded" : ""}`}>
                 {epicEntries.length === 0 ? (
                   <div className="lane-empty">No stories in this lane.</div>
                 ) : (
                   epicEntries.map(([epic, items], index) => (
-                    <div key={`${status}-${epic}`} className="epic-block">
+                    <div key={`${status}-${epic}`} className={`epic-block ${expandedLane === status ? "epic-block--expanded" : ""}`}>
                       {selectedEpic === "All epics" && index > 0 ? (
                         <div className="epic-divider" aria-hidden="true" />
                       ) : null}
@@ -2477,10 +2483,16 @@ function App() {
               </label>
               <label>
                 Owner
-                <input
+                <select
                   value={editor.owner}
                   onChange={(event) => setEditor({ ...editor, owner: event.target.value })}
-                />
+                >
+                  {ownerOptions.filter((owner) => owner !== "All owners").map((owner) => (
+                    <option key={owner} value={owner}>
+                      {owner}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Requester
@@ -2700,6 +2712,7 @@ function App() {
               backlogPath={data.path}
               agentCommand={appConfig?.agentCommand}
               configVersion={agentConfigVersion}
+              filterContext={deferredAgentContext}
               onStatusChange={setAgentStatus}
               onSessionPathChange={setAgentSessionBacklogPath}
             />
