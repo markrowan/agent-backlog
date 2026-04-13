@@ -545,11 +545,11 @@ Use for completed items with outcome notes.
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
 ## BACKLOG-017 - Show open or done story counts in epic selector
-- Status: Ready
+- Status: Done
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-13
-- Updated: 2026-04-13T21:10:30.631Z
+- Updated: 2026-04-13T21:43:00Z
 - Due Date: 
 - Priority: P1
 - Effort: 1
@@ -560,13 +560,13 @@ Use for completed items with outcome notes.
 - Outcome / user value: Users can scan epic progress directly in the selector and avoid opening each epic just to understand whether work remains.
 - Scope notes: In scope, appending `Open (N)` when an epic still has non-done stories and `Done (N)` when every story in that epic is done. Out of scope, adding separate progress bars, percentages, or filtering changes.
 - Acceptance criteria:
-  - [ ] Each epic option in the selector shows a count label.
-  - [ ] If an epic has one or more non-done stories, the label uses the form `Open (N)` where `N` is the number of non-done stories in that epic.
-  - [ ] If all stories in an epic are in `Done`, the label uses the form `Done (N)` where `N` is the number of done stories in that epic.
-  - [ ] The counts update when backlog story statuses change.
+  - [x] Each epic option in the selector shows a count label.
+  - [x] If an epic has one or more non-done stories, the label uses the form `Open (N)` where `N` is the number of non-done stories in that epic.
+  - [x] If all stories in an epic are in `Done`, the label uses the form `Done (N)` where `N` is the number of done stories in that epic.
+  - [x] The counts update when backlog story statuses change.
 - Dependencies: epic selector rendering, backlog status aggregation.
 - Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
+- Implementation notes: Implemented in selector labels with live item-status aggregation.
 
 ## BACKLOG-018 - Keep selected sprint visible when it becomes empty
 - Status: Ready
@@ -593,11 +593,11 @@ Use for completed items with outcome notes.
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
 ## BACKLOG-024 - Show epic name above story title in Current Sprint
-- Status: Ready
+- Status: Done
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-13
-- Updated: 2026-04-13T21:20:34.996Z
+- Updated: 2026-04-13T21:43:00.000Z
 - Due Date: 
 - Priority: P2
 - Effort: 1
@@ -608,13 +608,13 @@ Use for completed items with outcome notes.
 - Outcome / user value: Users can scan sprint context faster and understand related work grouping without opening each ticket.
 - Scope notes: In scope, rendering the epic name above the story title in the Current Sprint area with subdued visual treatment such as grey text. Out of scope, changing story grouping logic or adding new epic filters.
 - Acceptance criteria:
-  - [ ] Each story card in the Current Sprint view shows its epic name above the main story title.
-  - [ ] The epic name uses a visually subdued style so the story title remains the primary label.
-  - [ ] Stories without an epic do not render misleading placeholder text in the epic-label position.
-  - [ ] Adding the epic label does not make the story title harder to read or identify.
+  - [x] Each story card in the Current Sprint view shows its epic name above the main story title.
+  - [x] The epic name uses a visually subdued style so the story title remains the primary label.
+  - [x] Stories without an epic do not render misleading placeholder text in the epic-label position.
+  - [x] Adding the epic label does not make the story title harder to read or identify.
 - Dependencies: Current Sprint card rendering, epic metadata availability.
 - Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
+- Implementation notes: Implemented as a muted epic label above the title in Current Sprint; blank epics are omitted.
 
 ## In Progress
 

@@ -1392,10 +1392,18 @@ button {
   outline-offset: 2px;
 }
 
+.story-epic-label {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 .story-title-button {
   display: block;
   width: 100%;
-  margin: 10px 0 8px;
+  margin: 4px 0 8px;
   padding: 0;
   background: transparent;
   color: var(--text);

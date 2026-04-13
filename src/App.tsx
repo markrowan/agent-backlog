@@ -849,10 +849,12 @@ function App() {
 
     for (const epic of epicOptions) {
       if (epic === "All epics") continue;
-      const hasActiveItems = (data?.document.items ?? []).some(
-        (item) => (item.epic || "Unassigned") === epic && item.status !== "Done",
-      );
-      labels.set(epic, `${hasActiveItems ? "Open" : "Done"} - ${epic}`);
+
+      const itemsForEpic = (data?.document.items ?? []).filter((item) => (item.epic || "Unassigned") === epic);
+      const doneCount = itemsForEpic.filter((item) => item.status === "Done").length;
+      const openCount = itemsForEpic.length - doneCount;
+      const label = openCount > 0 ? `Open (${openCount})` : `Done (${doneCount})`;
+      labels.set(epic, `${label} - ${epic}`);
     }
 
     return labels;
@@ -2111,6 +2113,7 @@ function App() {
                       <button type="button" className={`effort-chip quick-edit-trigger effort-${item.effort}`} onClick={(event) => openQuickEditor(item, "effort", event)}>Effort {item.effort}</button>
                       <span className="story-id">{item.id}</span>
                     </div>
+                    {item.epic.trim() ? <div className="story-epic-label">{item.epic}</div> : null}
                     <button type="button" className="story-title-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "title", event)}>{item.title}</button>
                     <button type="button" className="story-summary-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "summary", event)}>{item.summary || "Add summary"}</button>
                     <div className="story-meta-line">
