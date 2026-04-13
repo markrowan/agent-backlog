@@ -557,6 +557,14 @@ button {
   font-size: clamp(1.25rem, 1.8vw, 1.6rem);
 }
 
+.metric-card--plain.is-over-capacity .meta-label {
+  color: #991b1b;
+}
+
+.metric-card--plain.is-over-capacity .metric-value {
+  color: #dc2626;
+}
+
 .source-picker {
   display: inline-grid;
   gap: 0;
@@ -812,6 +820,11 @@ button {
   align-self: flex-start;
 }
 
+.save-layout-button {
+  align-self: flex-start;
+  margin-top: 28px;
+}
+
 .sort-pill-row {
   display: flex;
   gap: 10px;
@@ -1015,6 +1028,16 @@ button {
   flex-wrap: wrap;
 }
 
+.current-sprint-help {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.current-sprint-help--blocked {
+  color: #7c2d12;
+}
+
 .current-sprint-controls {
   align-items: stretch;
 }
@@ -1037,14 +1060,10 @@ button {
   width: 100%;
 }
 
-.auto-sprint-button {
+.auto-sprint-button,
+.auto-groom-button {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.current-sprint-actions-row .sprint-clear-button {
-  align-self: center;
-  flex: 0 0 auto;
 }
 
 .auto-sprint-results {
@@ -1211,13 +1230,6 @@ button {
   align-items: start;
 }
 
-.current-sprint-sidebar {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
-  min-height: 378px;
-}
-
 .current-sprint-cards {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1233,45 +1245,6 @@ button {
   text-align: center;
 }
 
-.current-sprint-affordance {
-  min-height: 0;
-  height: 100%;
-  align-self: stretch;
-  border-radius: 24px;
-  border: 1px dashed var(--line-strong);
-  background: color-mix(in srgb, white 66%, var(--panel-tint));
-  display: grid;
-  place-items: center;
-  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-
-.current-sprint-affordance.is-active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, white 52%, var(--accent-soft));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 18px 34px color-mix(in srgb, var(--accent) 16%, transparent);
-  transform: translateY(-1px);
-}
-
-.current-sprint-affordance-inner {
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-  text-align: center;
-  padding: 20px;
-  color: var(--accent-deep);
-}
-
-.current-sprint-affordance-label {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-}
-
-.current-sprint-affordance strong {
-  font-size: 1rem;
-  letter-spacing: -0.02em;
-}
 
 .sprint-story-card {
   position: relative;
@@ -1314,11 +1287,6 @@ button {
 @media (max-width: 1480px) {
   .current-sprint-dropzone {
     grid-template-columns: 1fr;
-  }
-
-  .current-sprint-sidebar {
-    grid-template-rows: none;
-    min-height: 0;
   }
 
   .current-sprint-cards {
@@ -1375,6 +1343,7 @@ button {
 
 .sprint-clear-button {
   align-self: end;
+  margin-left: 4px;
 }
 
 .filter-creator-inline,

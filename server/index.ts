@@ -599,6 +599,15 @@ app.put("/api/backlog/items/:id", async (request, response) => {
   try {
     const current = await readBacklogFile();
     const payload = request.body as { version: number; item: Partial<BacklogItem> };
+    const existingItem = current.document.items.find((item) => item.id === request.params.id);
+    if (!existingItem) {
+      response.status(404).json({ message: "Story not found." });
+      return;
+    }
+    if (existingItem.status === "Done" && existingItem.sprintAssigned && !(payload.item.sprintAssigned ?? existingItem.sprintAssigned).trim()) {
+      response.status(400).json({ message: "Done stories stay locked to their sprint." });
+      return;
+    }
     const items = current.document.items.map((item) =>
       item.id === request.params.id
         ? {
@@ -703,7 +712,7 @@ app.post("/api/backlog/sprints/clear", async (request, response) => {
 
     const now = new Date().toISOString();
     const items = current.document.items.map((item) =>
-      item.sprintAssigned === sprint
+      item.sprintAssigned === sprint && item.status !== "Done"
         ? {
             ...item,
             sprintAssigned: "",

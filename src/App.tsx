@@ -152,6 +152,19 @@ interface ConfigPopoverState {
   y: number;
 }
 
+interface SavedLayout {
+  currentSprintTarget: string | null;
+  selectedEpic: string;
+  selectedOwner: string;
+  selectedSprint: string;
+  selectedStatus: string;
+  textFilter: string;
+  sortOrder: SortKey[];
+  sortDirections: Record<SortKey, SortDirection>;
+}
+
+const SAVED_LAYOUT_STORAGE_PREFIX = "agent-backlog:saved-layout:";
+
 const AGENT_PRESETS: Array<{ id: AgentPresetId; label: string; command: string }> = [
   {
     id: "codex",
@@ -482,6 +495,7 @@ function App() {
   const draggingEditorRef = useRef(false);
   const paulaDragOffsetRef = useRef({ x: 0, y: 0 });
   const draggingPaulaRef = useRef(false);
+  const savedLayoutAppliedForPathRef = useRef<string | null>(null);
 
   async function loadConfig() {
     const response = await fetch("/api/config");
@@ -575,6 +589,52 @@ function App() {
     }
   }
 
+  function savedLayoutStorageKey(path: string) {
+    return `${SAVED_LAYOUT_STORAGE_PREFIX}${path}`;
+  }
+
+  function saveCurrentLayout() {
+    if (!data?.path) return;
+
+    const layout: SavedLayout = {
+      currentSprintTarget,
+      selectedEpic,
+      selectedOwner,
+      selectedSprint,
+      selectedStatus,
+      textFilter,
+      sortOrder,
+      sortDirections,
+    };
+
+    localStorage.setItem(savedLayoutStorageKey(data.path), JSON.stringify(layout));
+  }
+
+  function applySavedLayout(path: string) {
+    const raw = localStorage.getItem(savedLayoutStorageKey(path));
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<SavedLayout>;
+      if (Array.isArray(parsed.sortOrder) && parsed.sortOrder.every((key) => DEFAULT_SORT_ORDER.includes(key))) {
+        setSortOrder(parsed.sortOrder as SortKey[]);
+      }
+      if (parsed.sortDirections) {
+        setSortDirections((current) => ({ ...current, ...parsed.sortDirections }));
+      }
+      if (typeof parsed.currentSprintTarget === "string" || parsed.currentSprintTarget === null) {
+        setCurrentSprintTarget(parsed.currentSprintTarget ?? null);
+      }
+      if (typeof parsed.selectedEpic === "string") setSelectedEpic(parsed.selectedEpic);
+      if (typeof parsed.selectedOwner === "string") setSelectedOwner(parsed.selectedOwner);
+      if (typeof parsed.selectedSprint === "string") setSelectedSprint(parsed.selectedSprint);
+      if (typeof parsed.selectedStatus === "string") setSelectedStatus(parsed.selectedStatus);
+      if (typeof parsed.textFilter === "string") setTextFilter(parsed.textFilter);
+    } catch {
+      localStorage.removeItem(savedLayoutStorageKey(path));
+    }
+  }
+
   async function loadBacklog(options?: { silent?: boolean }) {
     if (!options?.silent) {
       setLoading(true);
@@ -627,6 +687,13 @@ function App() {
   useEffect(() => {
     applyThemeToDocument(themeVars(data?.displayName ?? data?.document.title ?? "backlog"));
   }, [data?.displayName, data?.document.title]);
+
+  useEffect(() => {
+    if (!data?.path) return;
+    if (savedLayoutAppliedForPathRef.current === data.path) return;
+    savedLayoutAppliedForPathRef.current = data.path;
+    applySavedLayout(data.path);
+  }, [data?.path]);
 
   useEffect(() => {
     if (!data?.path) return;
@@ -937,6 +1004,8 @@ function App() {
   }, [isAutoSprintRunning]);
 
   const currentSprintEffort = useMemo(() => currentSprintItems.reduce((sum, item) => sum + item.effort, 0), [currentSprintItems]);
+  const autoSprintEffortCapNumber = useMemo(() => Number.parseInt(autoSprintEffortCap, 10), [autoSprintEffortCap]);
+  const isCurrentSprintOverCapacity = Number.isInteger(autoSprintEffortCapNumber) && currentSprintEffort > autoSprintEffortCapNumber;
 
   const epicOptions = useMemo(() => {
     const epics = new Set<string>(customEpicOptions);
@@ -1045,6 +1114,9 @@ function App() {
   }
 
   async function assignItemToSprint(item: BacklogItem, sprintAssigned: string) {
+    if (item.status === "Done" && item.sprintAssigned && !sprintAssigned.trim()) {
+      throw new Error("Done stories stay locked to their sprint.");
+    }
     await saveItem({ ...item, sprintAssigned });
   }
 
@@ -1093,6 +1165,35 @@ function App() {
       status: "running",
     });
     setAgentStatus(payload?.message ?? `Auto Sprint started for ${currentSprintSelection}.`);
+    setError(null);
+  }
+
+  async function runAutoGroom() {
+    if (!data) return;
+    if (!currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT) {
+      setError("Select a valid current sprint before starting Auto Groom.");
+      return;
+    }
+
+    openPaulaPanel();
+    setAgentStatus(`Opening Paula chat for ${currentSprintSelection}...`);
+    const response = await fetch("/api/agent/context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selectedSprint: currentSprintSelection,
+        selectedEpic,
+        selectedOwner,
+        textFilter,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    if (!response.ok) {
+      throw new Error(payload?.message ?? "Failed to start Auto Groom");
+    }
+
+    setAgentStatus(payload?.message ?? `Auto Groom started for ${currentSprintSelection}.`);
     setError(null);
   }
 
@@ -2171,6 +2272,10 @@ function App() {
               ))}
             </div>
           </div>
+
+          <button type="button" className="ghost-button save-layout-button" onClick={saveCurrentLayout} disabled={!data?.path}>
+            Save layout
+          </button>
         </div>
       </section>
 
@@ -2192,6 +2297,9 @@ function App() {
                 setCustomSprintOptions((current) =>
                   current.includes(effectiveSprint) ? current : [...current, effectiveSprint],
                 );
+              }
+              if (dragSource === "sprint" && item.status === "Done" && item.sprintAssigned && !effectiveSprint.trim()) {
+                throw new Error("Done stories stay locked to their sprint.");
               }
               await assignItemToSprint(item, effectiveSprint);
             } catch (caught) {
@@ -2240,11 +2348,22 @@ function App() {
                 <span className="meta-label">Stories</span>
                 <div className="metric-value">{currentSprintItems.length}</div>
               </div>
-              <div className="metric-card metric-card--plain">
+              <div className={`metric-card metric-card--plain ${isCurrentSprintOverCapacity ? "is-over-capacity" : ""}`}>
                 <span className="meta-label">Effort</span>
                 <div className="metric-value">{currentSprintEffort}</div>
               </div>
-              
+              {!currentSprintCollapsed ? (
+                <button
+                  type="button"
+                  className="icon-button sprint-clear-button"
+                  aria-label="Clear sprint assignments"
+                  title="Clear sprint"
+                  disabled={!currentSprintItems.length}
+                  onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
+                >
+                  {trashIcon()}
+                </button>
+              ) : null}
             </div>
           </div>
           {!currentSprintCollapsed ? (
@@ -2296,11 +2415,7 @@ function App() {
           {!currentSprintCollapsed ? <div className="current-sprint-dropzone">
             <div className="current-sprint-cards">
               {currentSprintItems.length === 0 ? (
-                <div className="lane-empty current-sprint-empty">
-                  {availableSprintTargets.length === 0
-                    ? "Drag a story here to assign it to the current sprint."
-                    : "Drag stories here to assign them to the current sprint."}
-                </div>
+                <div className="lane-empty current-sprint-empty" />
               ) : (
                 currentSprintItems.map((item) => (
                   <article
@@ -2322,9 +2437,14 @@ function App() {
                       className="sprint-card-remove"
                       aria-label={`Remove ${item.id} from ${currentSprintSelection}`}
                       title="Remove from current sprint"
+                      disabled={item.status === "Done"}
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
+                        if (item.status === "Done") {
+                          setError("Done stories stay locked to their sprint.");
+                          return;
+                        }
                         void assignItemToSprint(item, "").catch((caught) => setError((caught as Error).message));
                       }}
                     >
@@ -2349,54 +2469,50 @@ function App() {
                 ))
               )}
             </div>
-            <aside className="current-sprint-sidebar" aria-label="Sprint tools">
-              <section className="current-sprint-actions" aria-label="Auto Sprint controls">
-                <div className="current-sprint-controls">
-                  <label className="auto-sprint-cap">
-                    <span className="meta-label">Max Effort</span>
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={autoSprintEffortCap}
-                      onChange={(event) => setAutoSprintEffortCap(event.target.value)}
-                    />
-                  </label>
-                  <label className="auto-sprint-scope">
-                    <span className="meta-label">Scope</span>
-                    <select value={autoSprintScope} onChange={(event) => setAutoSprintScope(event.target.value as "filtered" | "all")}>
-                      <option value="filtered">Current filters</option>
-                      <option value="all">Whole backlog</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="current-sprint-actions-row">
-                  <button
-                    type="button"
-                    className="primary-button auto-sprint-button"
-                    disabled={!data || isAutoSprintRunning}
-                    onClick={() => void runAutoSprint().catch((caught) => setError((caught as Error).message))}
-                  >
-                    {`Auto Sprint${".".repeat(autoSprintDotCount)}`}
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button sprint-clear-button"
-                    aria-label="Clear sprint assignments"
-                    title="Clear sprint"
-                    disabled={!currentSprintItems.length}
-                    onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
-                  >
-                    {trashIcon()}
-                  </button>
-                </div>
-              </section>
-              <div className={`current-sprint-affordance ${dragSource === "board" && draggingId ? "is-active" : ""}`}>
-                <div className="current-sprint-affordance-inner">
-                  <span className="current-sprint-affordance-label">Drop to assign</span>
-                  <strong>{currentSprintSelection}</strong>
-                </div>
+            <aside className="current-sprint-actions" aria-label="Auto Sprint controls">
+              <div className="current-sprint-controls">
+                <label className="auto-sprint-cap">
+                  <span className="meta-label">Max Effort</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={autoSprintEffortCap}
+                    onChange={(event) => setAutoSprintEffortCap(event.target.value)}
+                  />
+                </label>
+                <label className="auto-sprint-scope">
+                  <span className="meta-label">Scope</span>
+                  <select value={autoSprintScope} onChange={(event) => setAutoSprintScope(event.target.value as "filtered" | "all")}>
+                    <option value="filtered">Current filters</option>
+                    <option value="all">Whole backlog</option>
+                  </select>
+                </label>
               </div>
+              <div className="current-sprint-actions-row">
+                <button
+                  type="button"
+                  className="primary-button auto-sprint-button"
+                  disabled={!data || isAutoSprintRunning}
+                  onClick={() => void runAutoSprint().catch((caught) => setError((caught as Error).message))}
+                >
+                  {`Auto Plan${".".repeat(autoSprintDotCount)}`}
+                </button>
+                <button
+                  type="button"
+                  className="primary-button auto-groom-button"
+                  disabled={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT}
+                  title={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? "Select a valid current sprint first." : `Open Paula chat for ${currentSprintSelection}`}
+                  onClick={() => void runAutoGroom().catch((caught) => setError((caught as Error).message))}
+                >
+                  Auto Groom
+                </button>
+              </div>
+              {!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? (
+                <div className="current-sprint-help current-sprint-help--blocked">Pick a valid current sprint to groom it with Paula.</div>
+              ) : (
+                <div className="current-sprint-help">Paula will open in the normal chat flow with {currentSprintSelection} as context.</div>
+              )}
             </aside>
           </div> : null}
         </div>
@@ -2417,6 +2533,9 @@ function App() {
                 if (!item) return;
                 try {
                   if (dragSource === "sprint") {
+                    if (item.status === "Done" && item.sprintAssigned) {
+                      throw new Error("Done stories stay locked to their sprint.");
+                    }
                     if (item.sprintAssigned) {
                       await assignItemToSprint(item, "");
                     }
