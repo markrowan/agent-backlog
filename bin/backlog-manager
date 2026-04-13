@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TARGET_PATH="${1:-/home/mark/Programs/OpenClaw/workspace/openclaw-docker/backlog}"
+PORT_WEB="${PORT_WEB:-5173}"
+PORT_API="${PORT_API:-4177}"
+PROMPT_FILE="$ROOT_DIR/docs/UX_PRODUCT_OWNER_PROMPT.md"
+LOG_WEB="/tmp/codex-backlog-web.log"
+LOG_API="/tmp/codex-backlog-api.log"
+
+notify() {
+  local message="$1"
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "Backlog Manager" "$message"
+  fi
+  printf '%s\n' "$message"
+}
+
+resolve_backlog_file() {
+  local input_path="$1"
+
+  if [[ -f "$input_path" ]]; then
+    printf '%s\n' "$input_path"
+    return 0
+  fi
+
+  if [[ -d "$input_path" ]]; then
+    local matches
+    mapfile -t matches < <(find "$input_path" -maxdepth 1 -type f \( -name "*.md" -o -name "backlog" \) | sort)
+    if [[ "${#matches[@]}" -eq 1 ]]; then
+      printf '%s\n' "${matches[0]}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+wait_for_port() {
+  local port="$1"
+  for _ in $(seq 1 30); do
+    if (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+spawn_codex_agent() {
+  local agent_prompt="$1"
+
+  if ! command -v codex >/dev/null 2>&1; then
+    notify "codex command not found. GUI will start without the backlog agent."
+    return 0
+  fi
+
+  if command -v x-terminal-emulator >/dev/null 2>&1; then
+    nohup x-terminal-emulator -e bash -lc "codex $(printf '%q' "$agent_prompt")" >/tmp/codex-backlog-agent.log 2>&1 &
+    notify "Spawned Codex backlog product owner agent."
+    return 0
+  fi
+
+  if command -v gnome-terminal >/dev/null 2>&1; then
+    nohup gnome-terminal -- bash -lc "codex $(printf '%q' "$agent_prompt"); exec bash" >/tmp/codex-backlog-agent.log 2>&1 &
+    notify "Spawned Codex backlog product owner agent."
+    return 0
+  fi
+
+  notify "codex is installed, but no GUI terminal launcher was found. Start the agent manually if needed."
+}
+
+BACKLOG_FILE="$(resolve_backlog_file "$TARGET_PATH")" || {
+  notify "Could not resolve a unique backlog markdown file from: $TARGET_PATH"
+  exit 1
+}
+
+if [[ ! -d "$ROOT_DIR/node_modules" ]]; then
+  notify "Installing backlog manager dependencies..."
+  (cd "$ROOT_DIR" && npm install >/dev/null)
+fi
+
+AGENT_PROMPT="$(cat "$PROMPT_FILE")"$'\n\n'"Backlog file to manage: $BACKLOG_FILE"
+spawn_codex_agent "$AGENT_PROMPT"
+
+notify "Starting backlog manager for $BACKLOG_FILE"
+(
+  cd "$ROOT_DIR"
+  BACKLOG_FILE="$BACKLOG_FILE" PORT="$PORT_API" nohup npm run dev:server >"$LOG_API" 2>&1 &
+  nohup npm run dev:client -- --host 127.0.0.1 >"$LOG_WEB" 2>&1 &
+)
+
+if ! wait_for_port "$PORT_WEB"; then
+  notify "Web UI did not start on port $PORT_WEB. Check $LOG_WEB"
+  exit 1
+fi
+
+if ! wait_for_port "$PORT_API"; then
+  notify "API did not start on port $PORT_API. Check $LOG_API"
+  exit 1
+fi
+
+if command -v xdg-open >/dev/null 2>&1; then
+  xdg-open "http://localhost:$PORT_WEB" >/dev/null 2>&1 || true
+fi
+
+notify "Backlog manager is available at http://localhost:$PORT_WEB"
