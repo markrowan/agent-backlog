@@ -21,6 +21,7 @@ import {
   getBacklogFile,
   nextBacklogId,
   readBacklogFile,
+  restorePreviousBacklogVersion,
   setBacklogFile,
   updateBacklogTitle,
   writeBacklog,
@@ -46,8 +47,32 @@ interface AgentTerminalSession {
   process: IPty;
 }
 
+interface AutoSprintTask {
+  startedAt: number;
+  startedVersion: number | null;
+  message: string | null;
+  sessionId: string | null;
+  sawPaulaReply: boolean;
+  sawOutput: boolean;
+  scope: "filtered" | "all";
+  sprint: string;
+  status: "idle" | "running" | "completed" | "failed";
+}
+
 let activeTerminalSession: AgentTerminalSession | null = null;
 const terminalClients = new Set<WebSocket>();
+let autoSprintTask: AutoSprintTask = {
+  startedAt: 0,
+  startedVersion: null,
+  message: null,
+  sessionId: null,
+  sawPaulaReply: false,
+  sawOutput: false,
+  scope: "filtered",
+  sprint: "",
+  status: "idle",
+};
+let autoSprintIdleTimer: NodeJS.Timeout | null = null;
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -88,7 +113,7 @@ async function broadcastBacklogChangedIfNeeded() {
 
   try {
     const stat = await fs.stat(watchedBacklogPath);
-    if (watchedBacklogVersion === null || Math.trunc(stat.mtimeMs) !== Math.trunc(watchedBacklogVersion)) {
+    if (watchedBacklogVersion === null || stat.mtimeMs !== watchedBacklogVersion) {
       watchedBacklogVersion = stat.mtimeMs;
       broadcastBacklogChanged();
     }
@@ -157,6 +182,75 @@ function submitTerminalInput(process: IPty, text: string) {
   globalThis.setTimeout(() => {
     process.write("\r");
   }, 24);
+}
+
+function clearAutoSprintIdleTimer() {
+  if (autoSprintIdleTimer) {
+    clearTimeout(autoSprintIdleTimer);
+    autoSprintIdleTimer = null;
+  }
+}
+
+function setAutoSprintTask(nextTask: Partial<AutoSprintTask>) {
+  autoSprintTask = {
+    ...autoSprintTask,
+    ...nextTask,
+  };
+}
+
+function resetAutoSprintTask() {
+  clearAutoSprintIdleTimer();
+  autoSprintTask = {
+    startedAt: 0,
+    startedVersion: null,
+    message: null,
+    sessionId: null,
+    sawPaulaReply: false,
+    sawOutput: false,
+    scope: "filtered",
+    sprint: "",
+    status: "idle",
+  };
+}
+
+function normalizeAgentOutput(value: string) {
+  return value
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/gi, "")
+    .replace(/[\u0000\u0007]/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+}
+
+async function completeAutoSprintTask(status: "completed" | "failed", fallbackMessage: string) {
+  clearAutoSprintIdleTimer();
+  let message = fallbackMessage;
+  if (status === "completed" && autoSprintTask.startedVersion !== null) {
+    try {
+      const backlog = await readBacklogFile();
+      message =
+        backlog.version !== autoSprintTask.startedVersion
+          ? `Auto Sprint finished for ${autoSprintTask.sprint}.`
+          : `Auto Sprint finished for ${autoSprintTask.sprint}, but no backlog changes were detected.`;
+    } catch {
+      // Keep fallback when backlog read fails during completion.
+    }
+  }
+  setAutoSprintTask({ message, status });
+}
+
+function scheduleAutoSprintCompletionCheck() {
+  clearAutoSprintIdleTimer();
+  autoSprintIdleTimer = setTimeout(() => {
+    if (autoSprintTask.status !== "running") return;
+    if (!autoSprintTask.sawOutput) return;
+    void completeAutoSprintTask(
+      autoSprintTask.sawPaulaReply ? "completed" : "failed",
+      autoSprintTask.sawPaulaReply
+        ? `Auto Sprint finished for ${autoSprintTask.sprint}.`
+        : "Auto Sprint ended before Paula returned a reply.",
+    );
+  }, 2600);
 }
 
 async function agentBootstrapPrompt(backlogPath: string) {
@@ -233,11 +327,27 @@ async function ensureTerminalSession(options?: { restart?: boolean }) {
 
   ptyProcess.onData((data) => {
     if (activeTerminalSession?.id !== session.id) return;
+    if (autoSprintTask.status === "running" && autoSprintTask.sessionId === session.id) {
+      const normalized = normalizeAgentOutput(data);
+      setAutoSprintTask({
+        sawOutput: true,
+        sawPaulaReply: autoSprintTask.sawPaulaReply || /^PAULA>>\s*/m.test(normalized),
+      });
+      scheduleAutoSprintCompletionCheck();
+    }
     broadcastTerminal({ type: "output", sessionId: session.id, data });
   });
 
   ptyProcess.onExit(({ exitCode, signal }) => {
     if (activeTerminalSession?.id !== session.id) return;
+    if (autoSprintTask.status === "running" && autoSprintTask.sessionId === session.id) {
+      void completeAutoSprintTask(
+        exitCode === 0 ? "completed" : "failed",
+        exitCode === 0
+          ? `Auto Sprint finished for ${autoSprintTask.sprint}.`
+          : `Auto Sprint agent exited with code ${exitCode}.`,
+      );
+    }
     broadcastTerminal({
       type: "exit",
       sessionId: session.id,
@@ -623,6 +733,111 @@ app.post("/api/backlog/sprints/clear", async (request, response) => {
   }
 });
 
+app.get("/api/backlog/sprints/auto/status", (_request, response) => {
+  response.json({
+    message: autoSprintTask.message,
+    scope: autoSprintTask.scope,
+    sprint: autoSprintTask.sprint,
+    startedAt: autoSprintTask.startedAt,
+    status: autoSprintTask.status,
+  });
+});
+
+app.post("/api/backlog/sprints/auto", async (request, response) => {
+  try {
+    const current = await readBacklogFile();
+    const payload = request.body as {
+      sprint: string;
+      effortCap: number;
+      scope: "filtered" | "all";
+      filters?: { epic?: string; owner?: string; sprint?: string; text?: string };
+    };
+
+    const sprint = String(payload.sprint ?? "").trim();
+    const effortCap = Number(payload.effortCap);
+    const scope = payload.scope === "filtered" ? "filtered" : "all";
+    const filters = payload.filters ?? {};
+
+    if (!sprint) {
+      response.status(400).json({ message: "Sprint is required." });
+      return;
+    }
+    if (!Number.isInteger(effortCap) || effortCap < 1) {
+      response.status(400).json({ message: "Effort cap must be a positive integer." });
+      return;
+    }
+    if (autoSprintTask.status === "running") {
+      response.status(409).json({ message: "Auto Sprint is already running." });
+      return;
+    }
+
+    const { agentCommand } = await readConfig();
+    if (!agentCommandAvailable(agentCommand)) {
+      const binary = extractCommandBinary(agentCommand) || agentCommand;
+      response.status(404).json({ message: `${binary} is not installed or not available in PATH.` });
+      return;
+    }
+
+    const scopeParts = [
+      scope === "filtered" && filters.epic && filters.epic !== "All epics" ? `epic: ${filters.epic}` : null,
+      scope === "filtered" && filters.owner && filters.owner !== "All owners" ? `owner: ${filters.owner}` : null,
+      scope === "filtered" && filters.sprint && filters.sprint !== "All sprints" ? `sprint: ${filters.sprint}` : null,
+      scope === "filtered" && filters.text?.trim() ? `text filter: "${filters.text.trim()}"` : null,
+    ].filter(Boolean);
+
+    const contextMessage = scopeParts.length
+      ? `Context update: current UI filters are ${scopeParts.join(", ")}. Treat these as strong scope guidance for this Auto Sprint request.`
+      : "Context update: no narrowing UI filters are active. Treat the whole backlog as in scope for this Auto Sprint request.";
+
+    const instruction = [
+      `Auto Sprint request: prepare ${sprint} using a maximum effort of ${effortCap}.`,
+      "Use reasonable product-priority assumptions when deciding what belongs in the sprint.",
+      scope === "filtered"
+        ? "Prioritize stories that match the current UI filters first, unless a strong backlog reason makes that clearly incorrect."
+        : "Use the whole backlog as the candidate pool.",
+      "Edit the selected backlog file directly. Reprioritize the sprint assignment fields so the sprint reflects your chosen plan.",
+      "Favor stories that are implementation-ready, coherent together, and fit within the stated effort budget.",
+      "When you finish, send a short summary of what you selected and why.",
+    ].join(" ");
+
+    const session = await ensureTerminalSession();
+    setAutoSprintTask({
+      message: `Auto Sprint started for ${sprint}.`,
+      scope,
+      sawOutput: false,
+      sawPaulaReply: false,
+      sessionId: session.id,
+      sprint,
+      startedAt: Date.now(),
+      startedVersion: current.version,
+      status: "running",
+    });
+
+    submitTerminalInput(session.process, contextMessage);
+    globalThis.setTimeout(() => {
+      if (autoSprintTask.status === "running" && autoSprintTask.sessionId === session.id) {
+        submitTerminalInput(session.process, instruction);
+      }
+    }, 120);
+
+    response.json({
+      message: `Auto Sprint started for ${sprint}.`,
+      sprint,
+      status: "running",
+    });
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing stories." });
+      return;
+    }
+    setAutoSprintTask({
+      message: (error as Error).message,
+      status: "failed",
+    });
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
 app.put("/api/backlog/title", async (request, response) => {
   try {
     const payload = request.body as { version: number; title: string };
@@ -638,6 +853,37 @@ app.put("/api/backlog/title", async (request, response) => {
     }
     if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
       response.status(400).json({ message: "Open a backlog file before editing stories." });
+      return;
+    }
+    response.status(500).json({ message: (error as Error).message });
+  }
+});
+
+app.get("/api/backlog/undo/status", async (_request, response) => {
+  try {
+    await readBacklogFile();
+    response.json({ available: true, message: "Undo will restore the saved pre-Paula backlog version for this file only." });
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ available: false, message: "Open a backlog file before using Undo." });
+      return;
+    }
+    response.status(500).json({ available: false, message: (error as Error).message });
+  }
+});
+
+app.post("/api/backlog/undo", async (_request, response) => {
+  try {
+    const updated = await restorePreviousBacklogVersion();
+    await rememberRecentBacklog(updated.path, updated.displayName);
+    response.json(updated);
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKUP_AVAILABLE") {
+      response.status(400).json({ message: (error as Error).message });
+      return;
+    }
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before using Undo." });
       return;
     }
     response.status(500).json({ message: (error as Error).message });

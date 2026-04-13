@@ -126,6 +126,9 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isAgentTyping, setIsAgentTyping] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [undoHint, setUndoHint] = useState("No reversible Paula backlog edit exists yet.");
+  const [undoBusy, setUndoBusy] = useState(false);
 
   function appendMessage(role: ChatRole, text: string) {
     const normalized = text.trim();
@@ -229,6 +232,9 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     setDraft("");
     setMessages([]);
     setIsAgentTyping(false);
+    setCanUndo(false);
+    setUndoHint("No reversible Paula backlog edit exists yet.");
+    setUndoBusy(false);
     setActiveTab("chat");
   }
 
@@ -263,6 +269,32 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       socket.send(payload);
     }
     outboundQueueRef.current = [];
+  }
+
+  async function restoreUndo() {
+    if (!backlogPath || undoBusy) return;
+    setUndoBusy(true);
+    try {
+      const response = await fetch("/api/backlog/undo", { method: "POST" });
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) {
+        const message = payload?.message ?? "Undo failed.";
+        onStatusChange?.(message);
+        appendMessage("agent", message);
+        return;
+      }
+      const message = "Undo restored the previous backlog version for this file.";
+      setCanUndo(false);
+      setUndoHint("No reversible Paula backlog edit exists yet.");
+      onStatusChange?.(message);
+      appendMessage("agent", message);
+    } catch {
+      const message = "Undo failed.";
+      onStatusChange?.(message);
+      appendMessage("agent", message);
+    } finally {
+      setUndoBusy(false);
+    }
   }
 
   function sendChatMessage() {
@@ -302,9 +334,39 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     if (!backlogPath) {
       lastFilterContextRef.current = null;
       pendingFilterContextRef.current = null;
+      setCanUndo(false);
+      setUndoHint("Open a backlog file before using Undo.");
       return;
     }
 
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/backlog/undo/status");
+        const payload = (await response.json().catch(() => null)) as { available?: boolean; message?: string } | null;
+        if (cancelled) return;
+        if (!response.ok) {
+          setCanUndo(false);
+          setUndoHint(payload?.message ?? "Undo status unavailable.");
+          return;
+        }
+        setCanUndo(Boolean(payload?.available));
+        setUndoHint(payload?.message ?? "Undo uses the saved pre-Paula backup for this backlog only.");
+      } catch {
+        if (!cancelled) {
+          setCanUndo(false);
+          setUndoHint("Undo status unavailable.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backlogPath, configVersion]);
+
+  useEffect(() => {
     if (lastFilterContextRef.current === null) {
       lastFilterContextRef.current = filterContext ?? null;
       return;
@@ -576,9 +638,21 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
                 }
               }}
             />
-            <button type="button" className="primary-button" onClick={sendChatMessage}>
-              Send
-            </button>
+            <div className="agent-chat-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={restoreUndo}
+                disabled={!canUndo || undoBusy}
+                title={undoHint}
+                aria-label={undoHint}
+              >
+                {undoBusy ? "Undoing…" : "Undo"}
+              </button>
+              <button type="button" className="primary-button" onClick={sendChatMessage}>
+                Send
+              </button>
+            </div>
           </div>
         </section>
 

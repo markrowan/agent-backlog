@@ -76,6 +76,7 @@ const SORT_LABELS: Record<SortKey, string> = {
 
 const ALL_SPRINTS = "All sprints";
 const UNASSIGNED_SPRINT = "Unassigned";
+const ALL_STATUSES = "All statuses";
 
 const DEFAULT_SORT_DIRECTIONS: Record<SortKey, SortDirection> = {
   epic: "asc",
@@ -88,6 +89,16 @@ const DEFAULT_SORT_DIRECTIONS: Record<SortKey, SortDirection> = {
 };
 
 const NO_BACKLOG_LOADED_MESSAGE = "No backlog file is loaded.";
+
+const compareSprintLabelsDescending = (left: string, right: string) => {
+  const leftMatch = left.match(/(\d+)(?!.*\d)/);
+  const rightMatch = right.match(/(\d+)(?!.*\d)/);
+  if (leftMatch && rightMatch) {
+    const difference = Number(rightMatch[1]) - Number(leftMatch[1]);
+    if (difference !== 0) return difference;
+  }
+  return right.localeCompare(left);
+};
 
 interface RecentBacklog {
   path: string;
@@ -105,6 +116,14 @@ interface MissingBacklogNotice {
   path: string;
   displayName: string;
   message: string;
+}
+
+interface AutoSprintTaskStatus {
+  message: string | null;
+  scope: "filtered" | "all";
+  sprint: string;
+  startedAt: number;
+  status: "idle" | "running" | "completed" | "failed";
 }
 
 type DragSource = "board" | "sprint";
@@ -416,9 +435,15 @@ function App() {
   const [selectedEpic, setSelectedEpic] = useState("All epics");
   const [selectedOwner, setSelectedOwner] = useState("All owners");
   const [selectedSprint, setSelectedSprint] = useState(UNASSIGNED_SPRINT);
+  const [selectedStatus, setSelectedStatus] = useState(ALL_STATUSES);
   const [textFilter, setTextFilter] = useState("");
   const [currentSprintTarget, setCurrentSprintTarget] = useState<string | null>(null);
   const [currentSprintCollapsed, setCurrentSprintCollapsed] = useState(false);
+  const [autoSprintEffortCap, setAutoSprintEffortCap] = useState("7");
+  const [autoSprintScope, setAutoSprintScope] = useState<"filtered" | "all">("filtered");
+  const [autoSprintProposal, setAutoSprintProposal] = useState<null | { selected: string[]; excluded: Array<{ id: string; reason: string }>; used: number; cap: number; sprint: string }>(null);
+  const [autoSprintTaskStatus, setAutoSprintTaskStatus] = useState<AutoSprintTaskStatus | null>(null);
+  const [autoSprintDotCount, setAutoSprintDotCount] = useState(0);
   const [sortOrder, setSortOrder] = useState<SortKey[]>([...DEFAULT_SORT_ORDER]);
   const [sortDirections, setSortDirections] = useState<Record<SortKey, SortDirection>>({ ...DEFAULT_SORT_DIRECTIONS });
   const [draggingSortKey, setDraggingSortKey] = useState<SortKey | null>(null);
@@ -651,10 +676,7 @@ function App() {
         }
         if (!backlogResponse.ok) return;
         const backlog = payload as BacklogResponse;
-        if (
-          latestVersionRef.current === null ||
-          Math.trunc(backlog.version) !== Math.trunc(latestVersionRef.current)
-        ) {
+        if (latestVersionRef.current === null || backlog.version !== latestVersionRef.current) {
           setData(backlog);
           setTitleDraft(backlog.document.title);
           latestVersionRef.current = backlog.version;
@@ -687,15 +709,7 @@ function App() {
       }
     }
 
-    const sorted = Array.from(sprints).sort((left, right) => {
-      const leftMatch = left.match(/(\d+)(?!.*\d)/);
-      const rightMatch = right.match(/(\d+)(?!.*\d)/);
-      if (leftMatch && rightMatch) {
-        const difference = Number(rightMatch[1]) - Number(leftMatch[1]);
-        if (difference !== 0) return difference;
-      }
-      return right.localeCompare(left);
-    });
+    const sorted = Array.from(sprints).sort(compareSprintLabelsDescending);
 
     return sorted[0] ?? "Sprint 1";
   }, [currentSprintTarget, customSprintOptions, data]);
@@ -760,13 +774,14 @@ function App() {
     const filteredItems = data.document.items
       .filter((item) => selectedEpic === "All epics" || item.epic === selectedEpic)
       .filter((item) => selectedOwner === "All owners" || item.owner === selectedOwner)
-      .filter((item) =>
-        selectedSprint === ALL_SPRINTS
-          ? true
-          : selectedSprint === UNASSIGNED_SPRINT
-            ? item.sprintAssigned.trim().length === 0
-            : item.sprintAssigned === selectedSprint,
-      )
+      .filter((item) => {
+        if (selectedStatus !== ALL_STATUSES && item.status !== selectedStatus) return false;
+        if (selectedSprint === ALL_SPRINTS) return true;
+        if (selectedSprint === UNASSIGNED_SPRINT) {
+          return item.sprintAssigned.trim().length === 0 && item.status !== "Done";
+        }
+        return item.sprintAssigned === selectedSprint;
+      })
       .filter((item) => itemMatchesTextFilter(item, textFilter))
       .sort(compareItems);
 
@@ -824,17 +839,7 @@ function App() {
       }
     }
 
-    const compareSprintsDescending = (left: string, right: string) => {
-      const leftMatch = left.match(/(\d+)(?!.*\d)/);
-      const rightMatch = right.match(/(\d+)(?!.*\d)/);
-      if (leftMatch && rightMatch) {
-        const difference = Number(rightMatch[1]) - Number(leftMatch[1]);
-        if (difference != 0) return difference;
-      }
-      return right.localeCompare(left);
-    };
-
-    return [ALL_SPRINTS, UNASSIGNED_SPRINT, ...Array.from(sprints).sort(compareSprintsDescending)];
+    return [ALL_SPRINTS, UNASSIGNED_SPRINT, ...Array.from(sprints).sort(compareSprintLabelsDescending)];
   }, [customSprintOptions, data]);
 
   useEffect(() => {
@@ -850,6 +855,20 @@ function App() {
       .filter((item) => item.sprintAssigned === currentSprintSelection)
       .filter((item) => itemMatchesTextFilter(item, textFilter));
   }, [currentSprintSelection, data, textFilter]);
+
+  const autoSprintSelectedItems = useMemo(() => {
+    if (!data || !autoSprintProposal) return [] as BacklogItem[];
+    const byId = new Map(data.document.items.map((item) => [item.id, item] as const));
+    return autoSprintProposal.selected.map((id) => byId.get(id)).filter((item): item is BacklogItem => Boolean(item));
+  }, [data, autoSprintProposal]);
+
+  const autoSprintExcludedItems = useMemo(() => {
+    if (!data || !autoSprintProposal) return [] as Array<{ item: BacklogItem | null; id: string; reason: string }>;
+    const byId = new Map(data.document.items.map((item) => [item.id, item] as const));
+    return autoSprintProposal.excluded.map((entry) => ({ item: byId.get(entry.id) ?? null, id: entry.id, reason: entry.reason }));
+  }, [data, autoSprintProposal]);
+
+  const isAutoSprintRunning = autoSprintTaskStatus?.status === "running";
 
   useEffect(() => {
     if (currentSprintItems.length > 0) {
@@ -868,6 +887,54 @@ function App() {
     setCurrentSprintTarget(previousSprint);
     setCustomSprintOptions((current) => (current.includes(previousSprint) ? current : [...current, previousSprint]));
   }, [currentSprintItems.length, currentSprintSelection, data]);
+
+  useEffect(() => {
+    if (!isAutoSprintRunning) {
+      setAutoSprintDotCount(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setAutoSprintDotCount((current) => (current + 1) % 4);
+    }, 420);
+
+    return () => window.clearInterval(timer);
+  }, [isAutoSprintRunning]);
+
+  useEffect(() => {
+    if (!isAutoSprintRunning) {
+      return;
+    }
+
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void (async () => {
+        try {
+          const response = await fetch("/api/backlog/sprints/auto/status");
+          const payload = (await response.json().catch(() => null)) as AutoSprintTaskStatus | null;
+          if (!response.ok || cancelled || !payload) {
+            return;
+          }
+
+          setAutoSprintTaskStatus(payload);
+
+          if (payload.status === "completed") {
+            setAgentStatus(payload.message ?? `Auto Sprint finished for ${payload.sprint}.`);
+            await loadBacklog({ silent: true });
+          } else if (payload.status === "failed") {
+            setError(payload.message ?? "Auto Sprint failed.");
+          }
+        } catch {
+          // Ignore transient polling failures while Auto Sprint is running.
+        }
+      })();
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [isAutoSprintRunning]);
 
   const currentSprintEffort = useMemo(() => currentSprintItems.reduce((sum, item) => sum + item.effort, 0), [currentSprintItems]);
 
@@ -981,8 +1048,61 @@ function App() {
     await saveItem({ ...item, sprintAssigned });
   }
 
+  async function runAutoSprint() {
+    if (!data) return;
+    const cap = Number.parseInt(autoSprintEffortCap, 10);
+    if (!Number.isInteger(cap) || cap < 1) {
+      setError("Enter a positive whole number for effort cap.");
+      return;
+    }
+
+    const response = await fetch("/api/backlog/sprints/auto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sprint: currentSprintSelection,
+        effortCap: cap,
+        scope: autoSprintScope,
+        filters: {
+          epic: selectedEpic,
+          owner: selectedOwner,
+          sprint: selectedSprint,
+          text: textFilter,
+        },
+      }),
+    });
+
+    if (response.status === 409) {
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      setError(payload?.message ?? "Auto Sprint is already running.");
+      return;
+    }
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(payload?.message ?? "Failed to run Auto Sprint");
+    }
+
+    const payload = (await response.json().catch(() => null)) as { message?: string; sprint?: string; status?: "running" } | null;
+    setAutoSprintProposal(null);
+    setAutoSprintTaskStatus({
+      message: payload?.message ?? `Auto Sprint started for ${currentSprintSelection}.`,
+      scope: autoSprintScope,
+      sprint: payload?.sprint ?? currentSprintSelection,
+      startedAt: Date.now(),
+      status: "running",
+    });
+    setAgentStatus(payload?.message ?? `Auto Sprint started for ${currentSprintSelection}.`);
+    setError(null);
+  }
+
   async function clearSprintAssignments(sprint: string) {
     if (!data) return;
+
+    const confirmed = window.confirm(`Clear all sprint assignments from ${sprint}?`);
+    if (!confirmed) {
+      return;
+    }
 
     const response = await fetch("/api/backlog/sprints/clear", {
       method: "POST",
@@ -1613,8 +1733,16 @@ function App() {
             </div>
             <div className="metrics-row hero-metrics-row">
               <div className="meta-card metric-card metric-card--plain">
-                <span className="meta-label">Stories</span>
-                <div className="metric-value">{data?.document.items.length ?? 0}</div>
+                <span className="meta-label">Open</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => item.status !== "Done").length) ?? 0}
+                </div>
+              </div>
+              <div className="meta-card metric-card metric-card--plain">
+                <span className="meta-label">Done</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => item.status === "Done").length) ?? 0}
+                </div>
               </div>
               <div className="meta-card metric-card metric-card--plain">
                 <span className="meta-label">Epics</span>
@@ -1889,52 +2017,6 @@ function App() {
 
       <section className="epic-filter-strip">
         <div className="board-controls">
-          <div className="sort-switcher">
-            <span className="meta-label">Sort</span>
-            <div className="sort-pill-row">
-              {sortOrder.map((key) => (
-                <div key={key} className={`sort-pill-group ${sortChipClass(key)}`}>
-                  <button
-                    type="button"
-                    className={`sort-pill sort-pill--${key}`}
-                    draggable
-                    onDragStart={() => setDraggingSortKey(key)}
-                    onDragEnd={() => {
-                      setDraggingSortKey(null);
-                      setDragOverSortKey(null);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      if (draggingSortKey && draggingSortKey !== key) {
-                        setDragOverSortKey(key);
-                      }
-                    }}
-                    onDrop={() => {
-                      if (draggingSortKey && draggingSortKey !== key) {
-                        reorderSortKeys(draggingSortKey, key);
-                      }
-                      setDraggingSortKey(null);
-                      setDragOverSortKey(null);
-                    }}
-                    title="Drag to reorder sort priority"
-                  >
-                    <span className="sort-pill-handle">::</span>
-                    {SORT_LABELS[key]}
-                  </button>
-                  <button
-                    type="button"
-                    className={`sort-direction-button sort-direction-button--${key}`}
-                    onClick={() => toggleSortDirection(key)}
-                    aria-label={`Sort ${SORT_LABELS[key]} ${sortDirections[key] === "asc" ? "descending" : "ascending"}`}
-                    title={`Currently ${sortDirections[key] === "asc" ? "ascending" : "descending"}`}
-                  >
-                    <span aria-hidden="true">{sortDirections[key] === "asc" ? "↑" : "↓"}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div className="filter-switchers">
             <label className="epic-switcher">
               <span className="meta-label">Epic</span>
@@ -1982,6 +2064,21 @@ function App() {
                 </button>
               </div>
             </label>
+            <label className="epic-switcher status-switcher">
+              <span className="meta-label">Status</span>
+              <div className="filter-select-row">
+                <select
+                  value={selectedStatus}
+                  onChange={(event) => setSelectedStatus(event.target.value)}
+                >
+                  {[ALL_STATUSES, ...STATUSES].map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </label>
             <label className="epic-switcher sprint-switcher">
               <span className="meta-label">Sprint</span>
               <div className="filter-select-row sprint-select-row">
@@ -2027,6 +2124,52 @@ function App() {
                 </button>
               </div>
             </label>
+          </div>
+
+          <div className="sort-switcher">
+            <span className="meta-label">Sort</span>
+            <div className="sort-pill-row">
+              {sortOrder.map((key) => (
+                <div key={key} className={`sort-pill-group ${sortChipClass(key)}`}>
+                  <button
+                    type="button"
+                    className={`sort-pill sort-pill--${key}`}
+                    draggable
+                    onDragStart={() => setDraggingSortKey(key)}
+                    onDragEnd={() => {
+                      setDraggingSortKey(null);
+                      setDragOverSortKey(null);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (draggingSortKey && draggingSortKey !== key) {
+                        setDragOverSortKey(key);
+                      }
+                    }}
+                    onDrop={() => {
+                      if (draggingSortKey && draggingSortKey !== key) {
+                        reorderSortKeys(draggingSortKey, key);
+                      }
+                      setDraggingSortKey(null);
+                      setDragOverSortKey(null);
+                    }}
+                    title="Drag to reorder sort priority"
+                  >
+                    <span className="sort-pill-handle">::</span>
+                    {SORT_LABELS[key]}
+                  </button>
+                  <button
+                    type="button"
+                    className={`sort-direction-button sort-direction-button--${key}`}
+                    onClick={() => toggleSortDirection(key)}
+                    aria-label={`Sort ${SORT_LABELS[key]} ${sortDirections[key] === "asc" ? "descending" : "ascending"}`}
+                    title={`Currently ${sortDirections[key] === "asc" ? "ascending" : "descending"}`}
+                  >
+                    <span aria-hidden="true">{sortDirections[key] === "asc" ? "↑" : "↓"}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -2101,20 +2244,55 @@ function App() {
                 <span className="meta-label">Effort</span>
                 <div className="metric-value">{currentSprintEffort}</div>
               </div>
-              {!currentSprintCollapsed ? (
-                <button
-                  type="button"
-                  className="icon-button sprint-clear-button"
-                  aria-label="Clear sprint assignments"
-                  title="Clear sprint"
-                  disabled={!currentSprintItems.length}
-                  onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
-                >
-                  {trashIcon()}
-                </button>
-              ) : null}
+              
             </div>
           </div>
+          {!currentSprintCollapsed ? (
+            <div className="auto-sprint-results">
+              {autoSprintProposal ? (
+                <div className="auto-sprint-results-panel">
+                  <div className="auto-sprint-results-summary">
+                    <div className="lane-empty auto-sprint-results-summary-copy">
+                      <strong>Auto Sprint applied</strong>
+                      <span>
+                        {autoSprintProposal.selected.length} stories, {autoSprintProposal.used}/{autoSprintProposal.cap} effort used
+                        {autoSprintProposal.excluded.length ? `, ${autoSprintProposal.excluded.length} skipped.` : "."}
+                      </span>
+                    </div>
+                  </div>
+                  {autoSprintSelectedItems.length ? (
+                    <div className="auto-sprint-results-section">
+                      <div className="meta-label">Applied in order</div>
+                      <ol className="auto-sprint-results-list">
+                        {autoSprintSelectedItems.map((item, index) => (
+                          <li key={item.id} className="auto-sprint-results-item">
+                            <span className="auto-sprint-results-rank">{index + 1}.</span>
+                            <span className="auto-sprint-results-id">{item.id}</span>
+                            <span className="auto-sprint-results-title">{item.title}</span>
+                            <span className="auto-sprint-results-meta">{item.priority}, Effort {item.effort}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
+                  {autoSprintExcludedItems.length ? (
+                    <div className="auto-sprint-results-section">
+                      <div className="meta-label">Skipped</div>
+                      <ul className="auto-sprint-results-list">
+                        {autoSprintExcludedItems.map(({ item, id, reason }) => (
+                          <li key={id} className="auto-sprint-results-item auto-sprint-results-item--excluded">
+                            <span className="auto-sprint-results-id">{id}</span>
+                            <span className="auto-sprint-results-title">{item?.title ?? "Unknown story"}</span>
+                            <span className="auto-sprint-results-meta">{reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {!currentSprintCollapsed ? <div className="current-sprint-dropzone">
             <div className="current-sprint-cards">
               {currentSprintItems.length === 0 ? (
@@ -2171,12 +2349,55 @@ function App() {
                 ))
               )}
             </div>
-            <div className={`current-sprint-affordance ${dragSource === "board" && draggingId ? "is-active" : ""}`}>
-              <div className="current-sprint-affordance-inner">
-                <span className="current-sprint-affordance-label">Drop to assign</span>
-                <strong>{currentSprintSelection}</strong>
+            <aside className="current-sprint-sidebar" aria-label="Sprint tools">
+              <section className="current-sprint-actions" aria-label="Auto Sprint controls">
+                <div className="current-sprint-controls">
+                  <label className="auto-sprint-cap">
+                    <span className="meta-label">Max Effort</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={autoSprintEffortCap}
+                      onChange={(event) => setAutoSprintEffortCap(event.target.value)}
+                    />
+                  </label>
+                  <label className="auto-sprint-scope">
+                    <span className="meta-label">Scope</span>
+                    <select value={autoSprintScope} onChange={(event) => setAutoSprintScope(event.target.value as "filtered" | "all")}>
+                      <option value="filtered">Current filters</option>
+                      <option value="all">Whole backlog</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="current-sprint-actions-row">
+                  <button
+                    type="button"
+                    className="primary-button auto-sprint-button"
+                    disabled={!data || isAutoSprintRunning}
+                    onClick={() => void runAutoSprint().catch((caught) => setError((caught as Error).message))}
+                  >
+                    {`Auto Sprint${".".repeat(autoSprintDotCount)}`}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button sprint-clear-button"
+                    aria-label="Clear sprint assignments"
+                    title="Clear sprint"
+                    disabled={!currentSprintItems.length}
+                    onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
+                  >
+                    {trashIcon()}
+                  </button>
+                </div>
+              </section>
+              <div className={`current-sprint-affordance ${dragSource === "board" && draggingId ? "is-active" : ""}`}>
+                <div className="current-sprint-affordance-inner">
+                  <span className="current-sprint-affordance-label">Drop to assign</span>
+                  <strong>{currentSprintSelection}</strong>
+                </div>
               </div>
-            </div>
+            </aside>
           </div> : null}
         </div>
       </section>

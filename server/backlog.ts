@@ -441,3 +441,37 @@ export async function updateBacklogTitle(nextTitle: string, expectedVersion: num
   const document = parseBacklog(raw);
   return writeBacklog(document, expectedVersion);
 }
+
+export async function restorePreviousBacklogVersion() {
+  const filePath = requireBacklogFile();
+  const directory = path.dirname(filePath);
+  const basename = path.basename(filePath);
+  const backupPath = path.join(directory, `.${basename}.bak`);
+
+  try {
+    await fs.access(backupPath);
+  } catch {
+    const error = new Error("No reversible Paula backlog edit exists yet.") as Error & { code?: string };
+    error.code = "NO_BACKUP_AVAILABLE";
+    throw error;
+  }
+
+  const backupRaw = await fs.readFile(backupPath, "utf8");
+  if (!backupRaw.trim()) {
+    const error = new Error("The saved backup is empty and cannot be restored.") as Error & { code?: string };
+    error.code = "NO_BACKUP_AVAILABLE";
+    throw error;
+  }
+
+  const tempPath = path.join(directory, `.${basename}.undo.tmp`);
+  await fs.writeFile(tempPath, backupRaw, "utf8");
+  await fs.rename(tempPath, filePath);
+
+  const stat = await fs.stat(filePath);
+  return {
+    path: filePath,
+    displayName: path.basename(filePath),
+    version: stat.mtimeMs,
+    document: parseBacklog(backupRaw),
+  };
+}
