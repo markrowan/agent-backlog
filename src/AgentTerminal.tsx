@@ -93,6 +93,9 @@ function extractPaulaMessage(line: string) {
   const match = line.match(/^PAULA>>\s*(.*)$/i);
   if (!match) return null;
   const message = stripPromptArtifacts(match[1] ?? "");
+  if (/^(user request:|submitted message:|request:)/i.test(message)) {
+    return null;
+  }
   return message || null;
 }
 
@@ -277,6 +280,12 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     flushAssistantBuffer();
     appendMessage("user", message);
     pendingUserEchoesRef.current.push(message);
+    pendingUserEchoesRef.current.push(`User request: ${message}`);
+    pendingUserEchoesRef.current.push(submittedMessage);
+    if (deferredContext) {
+      pendingUserEchoesRef.current.push(deferredContext);
+      pendingUserEchoesRef.current.push(`${deferredContext}\n\nUser request: ${message}`);
+    }
     submitInput(submittedMessage);
     pendingFilterContextRef.current = null;
     setDraft("");

@@ -1182,6 +1182,18 @@ button {
   margin-bottom: 14px;
 }
 
+.lane-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lane-add-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
 .lane-header-title {
   display: inline-flex;
   align-items: flex-start;

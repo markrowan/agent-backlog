@@ -550,6 +550,7 @@ function App() {
         setData(null);
         setTitleDraft("");
         latestVersionRef.current = null;
+        setError("The selected backlog file cannot be opened because the saved path is no longer valid.");
         return;
       }
 
@@ -627,6 +628,7 @@ function App() {
           setTitleDraft("");
           latestVersionRef.current = null;
           setAgentStatus(null);
+          setError("The selected backlog file cannot be opened because the saved path is no longer valid.");
           return;
         }
         if (!backlogResponse.ok) return;
@@ -2175,7 +2177,20 @@ function App() {
                   </button>
                   <h2>{status}</h2>
                 </div>
-                <span>{epicEntries.reduce((sum, [, items]) => sum + items.length, 0)}</span>
+                <div className="lane-header-actions">
+                  {status === "Inbox" ? (
+                    <button
+                      type="button"
+                      className="icon-button lane-add-button"
+                      aria-label="Add request to Inbox"
+                      title="Add request"
+                      onClick={() => openPaulaPanel()}
+                    >
+                      {newBacklogIcon()}
+                    </button>
+                  ) : null}
+                  <span>{epicEntries.reduce((sum, [, items]) => sum + items.length, 0)}</span>
+                </div>
               </div>
 
               <div className={`lane-scroll ${expandedLane === status ? "lane-scroll--expanded" : ""}`}>
