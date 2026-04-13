@@ -58,7 +58,9 @@ const STATUS_ORDER: Record<BacklogItem["status"], number> = {
   Grooming: 1,
   Ready: 2,
   "In Progress": 3,
-  Done: 4,
+  Testing: 4,
+  Review: 5,
+  Done: 6,
 };
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -440,6 +442,7 @@ function App() {
   const [titleDraft, setTitleDraft] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   const latestVersionRef = useRef<number | null>(null);
+  const lastVisibleSprintRef = useRef<string>(UNASSIGNED_SPRINT);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const draggingEditorRef = useRef(false);
   const paulaDragOffsetRef = useRef({ x: 0, y: 0 });
@@ -832,6 +835,24 @@ function App() {
       .filter((item) => item.sprintAssigned === currentSprintSelection)
       .filter((item) => itemMatchesTextFilter(item, textFilter));
   }, [currentSprintSelection, data, textFilter]);
+
+  useEffect(() => {
+    if (currentSprintItems.length > 0) {
+      lastVisibleSprintRef.current = currentSprintSelection;
+      return;
+    }
+
+    if (!data || !currentSprintSelection.trim()) return;
+
+    const previousSprint = lastVisibleSprintRef.current;
+    if (!previousSprint || previousSprint === currentSprintSelection) return;
+
+    const previousSprintStillExists = data.document.items.some((item) => item.sprintAssigned === previousSprint);
+    if (previousSprintStillExists) return;
+
+    setCurrentSprintTarget(previousSprint);
+    setCustomSprintOptions((current) => (current.includes(previousSprint) ? current : [...current, previousSprint]));
+  }, [currentSprintItems.length, currentSprintSelection, data]);
 
   const currentSprintEffort = useMemo(() => currentSprintItems.reduce((sum, item) => sum + item.effort, 0), [currentSprintItems]);
 
@@ -2083,7 +2104,7 @@ function App() {
                 currentSprintItems.map((item) => (
                   <article
                     key={`sprint-${item.id}`}
-                    className="story-card sprint-story-card"
+                    className={`story-card sprint-story-card ${item.status === "Done" ? "sprint-story-card--done" : ""}`}
                     draggable
                     onDragStart={() => {
                       setDraggingId(item.id);

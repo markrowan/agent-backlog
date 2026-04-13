@@ -3,6 +3,8 @@ export const STATUSES = [
   "Grooming",
   "Ready",
   "In Progress",
+  "Testing",
+  "Review",
   "Done",
 ] as const;
 

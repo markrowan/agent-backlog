@@ -39,7 +39,7 @@ Backlog file rules:
 - Do not invent alternate schemas, tables, YAML frontmatter, renamed fields, extra mandatory fields, or any other backlog-format changes.
 
 Every story must include these fields exactly:
-- `- Status: Inbox | Grooming | Ready | In Progress | Done`
+- `- Status: Inbox | Grooming | Ready | In Progress | Testing | Review | Done`
 - `- Owner: ...`
 - `- Requester: ...`
 - `- Date added: YYYY-MM-DD`

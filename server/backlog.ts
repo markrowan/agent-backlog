@@ -36,7 +36,13 @@ Use for items being clarified, scoped, or prioritized.
 Use for items scoped well enough for implementation.
 
 ### In Progress
-Use for items currently being implemented, reviewed, or deployed.
+Use for items currently being implemented.
+
+### Testing
+Use for items under active test or verification.
+
+### Review
+Use for items waiting on review or sign-off.
 
 ### Done
 Use for completed items with outcome notes.
@@ -45,7 +51,7 @@ Use for completed items with outcome notes.
 
 \`\`\`md
 ## BACKLOG-XXX - Title
-- Status: Inbox | Grooming | Ready | In Progress | Done
+- Status: Inbox | Grooming | Ready | In Progress | Testing | Review | Done
 - Owner: Paula Product
 - Requester: Name or source thread
 - Date added: YYYY-MM-DD
@@ -328,7 +334,7 @@ Use for completed items with outcome notes.
 
 \`\`\`md
 ## BACKLOG-XXX - Title
-- Status: Inbox | Grooming | Ready | In Progress | Done
+- Status: Inbox | Grooming | Ready | In Progress | Testing | Review | Done
 - Owner: Paula Product
 - Requester: Name or source thread
 - Date added: YYYY-MM-DD
