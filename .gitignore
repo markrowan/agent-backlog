@@ -3,3 +3,4 @@ dist/
 dist-server/
 .DS_Store
 *.log
+backlog/codex-agile-backlog.md
