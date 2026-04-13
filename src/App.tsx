@@ -1556,6 +1556,8 @@ function App() {
               }}
               aria-label="Project name"
             />
+          </div>
+          <div className="hero-toolbar" role="group" aria-label="Backlog toolbar">
             <div className="shortcut-chip-row hero-chip-row">
               <button
                 type="button"
@@ -1620,18 +1622,24 @@ function App() {
                   {new Set(data?.document.items.map((item) => item.epic)).size}
                 </div>
               </div>
-              <button
-                type="button"
-                className={`config-button ${showConfigPanel ? "is-active" : ""}`}
-                onClick={openConfigPanel}
-                aria-label="Agent configuration"
-                title={appConfig?.configPath ?? "Agent configuration"}
-              >
-                {settingsIcon()}
-              </button>
+              <div className="hero-toolbar-utility">
+                <button
+                  type="button"
+                  className={`config-button ${showConfigPanel ? "is-active" : ""}`}
+                  onClick={openConfigPanel}
+                  aria-label="Agent configuration"
+                  title={appConfig?.configPath ?? "Agent configuration"}
+                >
+                  {settingsIcon()}
+                </button>
+              </div>
             </div>
           </div>
-          {savingTitle ? <span className="agent-status">Saving title…</span> : null}
+          {savingTitle ? (
+            <div className="hero-status-row">
+              <span className="agent-status">Saving title…</span>
+            </div>
+          ) : null}
         </div>
       </header>
 

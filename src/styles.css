@@ -111,7 +111,23 @@ button {
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
+}
+
+.hero-toolbar {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 18px 22px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.hero-status-row {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
 }
 
 .hero-copy {
@@ -383,8 +399,8 @@ button {
 
 .hero-chip-row {
   margin-top: 0;
-  flex: 0 1 auto;
-  margin-left: auto;
+  flex: 1 1 440px;
+  margin-left: 0;
 }
 
 .shortcut-chip-group {
@@ -463,6 +479,16 @@ button {
 .hero-metrics-row {
   margin-top: 0;
   margin-left: auto;
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+}
+
+.hero-toolbar-utility {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding-left: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
 }
 
 .source-panel strong,
@@ -671,6 +697,7 @@ button {
   color: var(--muted);
   font-size: 0.92rem;
   padding-left: 2px;
+  min-height: 22px;
 }
 
 .agent-status.is-mismatch {
@@ -1948,6 +1975,28 @@ textarea {
 
   .hero-title-row {
     align-items: flex-start;
+  }
+
+  .hero-toolbar {
+    align-items: flex-start;
+  }
+
+  .hero-chip-row,
+  .hero-metrics-row {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .hero-metrics-row {
+    padding-left: 0;
+    padding-top: 12px;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .hero-toolbar-utility {
+    margin-left: 0;
+    padding-left: 12px;
   }
 
   .meta-strip {
