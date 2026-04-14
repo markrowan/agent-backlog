@@ -209,6 +209,133 @@ Use for completed items with outcome notes.
 - Links: current session request
 - Implementation notes: Original intake preserved in product terms: mobile interface, host the markdown backlog and possibly the full interface online, and use that hosted experience to launch an AgentLab instance to run a sprint.
 
+## BACKLOG-068 - Containerize hosted backlog upload and project-pill naming
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T21:31:57.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Deliver a first hosted deployment slice that runs in a container with the `codex` package installed and replaces `Open` with markdown backlog upload that stores files locally and exposes them through project pills.
+- Outcome / user value: Users can bring a backlog into a hosted instance without local-path setup, then switch between uploaded projects through clean project pills that do not leak filesystem paths.
+- Scope notes: In scope, defining the first containerized deployment shape for the hosted app, including the requirement that the runtime image has the `codex` package available for Paula and sprint-run workflows. In scope, replacing the current `Open` action with an upload-first backlog intake flow for markdown files, storing the uploaded file locally on the hosted instance, creating or updating the matching project-pill reference, and showing only the file name stub on project-pill hover instead of the full stored path. In scope, clarifying the minimum upload constraints and duplicate-file handling needed for a safe v1. Out of scope, external object storage, collaborative file libraries, full document management, or exposing raw server filesystem paths in the UI.
+- Acceptance criteria:
+  - [ ] The hosted deployment story defines a containerized runtime for the app and includes the `codex` package as a required part of that runtime.
+  - [ ] The primary backlog-entry action for hosted use is an upload flow for markdown backlog files rather than the current path-based `Open` behavior.
+  - [ ] Uploading a markdown backlog stores the file locally on the hosted instance and makes it available as a selectable project pill.
+  - [ ] Project pills created from uploaded backlogs show a short readable file name stub on hover instead of the full stored path.
+  - [ ] The story defines what happens when a user uploads a file whose name conflicts with an already stored project file.
+- Dependencies: BACKLOG-045, hosted local-file storage decision, container deployment decision, Paula runtime requirements.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: deploy in a containerised instance with the codex package installed, convert `Open` into markdown upload that stores the file locally and references it in project pills, and show only the markdown file name stub on project-pill mouseover.
+
+## BACKLOG-069 - Add a lightweight user profile switcher
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T23:43:26.609Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 11
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Add a user profile button that switches the app to a different config file so each profile remembers its own project list and saved layouts.
+- Outcome / user value: One person can keep separate working contexts without overwriting another context's recent projects and layout choices.
+- Scope notes: In scope, a visible profile-switch entry point, a first-release model where each chosen profile maps to a different config file, and keeping remembered project files and layout state isolated per profile. In scope, clarifying whether profile creation is manual, seeded, or lightweight in-app for v1. Out of scope, full sign-in, permissions, remote identity providers, or shared editing rules between different people.
+- Acceptance criteria:
+  - [ ] The product provides a visible user profile control for switching between at least two profile contexts.
+  - [ ] Switching profiles changes which config file the app reads and writes for profile-scoped preferences.
+  - [ ] Each profile remembers its own project-file list without overwriting another profile's remembered projects.
+  - [ ] Each profile remembers its own saved layout state independently of other profiles.
+  - [ ] The story defines the minimum v1 rule for creating or naming profiles so the behavior is predictable.
+- Dependencies: BACKLOG-065, profile-to-config mapping decision, hosted config storage behavior.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: add a user profile button that initially just writes to a different config file and therefore remembers different project files and layouts.
+
+## BACKLOG-070 - Add OAuth sign-in for hosted access
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T21:31:57.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Replace the lightweight profile-only model with full OAuth sign-in so hosted users can access their own backlog context through authenticated identities.
+- Outcome / user value: Hosted users can return to their own project and layout context through a real sign-in flow instead of relying on local profile switching alone.
+- Scope notes: In scope, defining the hosted OAuth login flow, session persistence expectations, sign-out behavior, and how an authenticated identity maps to that user's saved project and layout context. In scope, deciding whether the profile-button v1 remains as an internal context switcher or is superseded by account identity once OAuth exists. Out of scope, broad enterprise permission models, team roles, or non-OAuth identity providers.
+- Acceptance criteria:
+  - [ ] The story defines one OAuth-based sign-in flow for hosted users, including login success, login failure, and sign-out behavior.
+  - [ ] After sign-in, the product associates saved project and layout context with the authenticated user identity rather than a shared anonymous session.
+  - [ ] Returning authenticated users can recover their own saved context without relying on a manually chosen local config file.
+  - [ ] The story defines how the earlier profile-button behavior coexists with or is replaced by OAuth-based identity.
+  - [ ] The first OAuth release stays focused on user authentication and context recovery rather than broader role-management features.
+- Dependencies: BACKLOG-045, BACKLOG-069, hosted authentication decision, session storage decision.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: a later ticket should implement full OAuth login after the lightweight profile-based context split.
+
+## BACKLOG-071 - Support concurrent multi-user work on one hosted server
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T21:31:57.000Z
+- Due Date: 
+- Priority: P0
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Let multiple authenticated users use the same hosted server concurrently without leaking each other's files, layouts, or in-progress actions.
+- Outcome / user value: Teams can share one hosted deployment safely instead of needing a separate server per person to avoid collisions and lost context.
+- Scope notes: In scope, defining the isolation rules needed for concurrent hosted use across uploaded backlog files, saved layouts, Paula sessions, and sprint-run actions on one server. In scope, clarifying what is user-scoped, what is project-scoped, and what conflict handling is required when more than one user touches the same hosted backlog. In scope, preserving the markdown file as the source of truth while making concurrent usage legible and safe. Out of scope, fine-grained enterprise permissions, billing, or a full collaborative presence system.
+- Acceptance criteria:
+  - [ ] Multiple authenticated users can use the same hosted server without seeing another user's private saved layout or profile-scoped project context by default.
+  - [ ] The story defines whether uploaded backlog files are private per user, shared per project, or shared per workspace, and how that scope is surfaced in the UI.
+  - [ ] The story defines how Paula sessions and sprint-run actions are isolated or labeled when more than one user is active at the same time.
+  - [ ] The story defines the minimum conflict-handling behavior when two users try to update the same hosted markdown backlog close together.
+  - [ ] The concurrent-use design preserves the markdown backlog as the durable source of truth rather than introducing hidden story state that can diverge.
+- Dependencies: BACKLOG-045, BACKLOG-068, BACKLOG-070, write-safety model, hosted session isolation decision.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: after hosted auth exists, allow concurrent usage by multiple users from the same server.
+
+### Epic 3, Future UX and workflow polish
+
+## BACKLOG-072 - Add current-sprint shortcut to `No sprint` chip
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-14T23:46:18.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Attach a compact `+` action to the `No sprint` chip on an unassigned ticket so one click adds that ticket to the currently selected sprint.
+- Outcome / user value: Users can pull unscheduled work into the active sprint faster without opening the editor or using drag-and-drop for a simple add.
+- Scope notes: In scope, adding a compact current-sprint shortcut directly beside the `No sprint` chip on board ticket cards, using the currently selected sprint as the target, and updating the visible sprint label immediately after assignment. In scope, defining the blocked state when no valid current sprint is selected and keeping the shortcut limited to tickets that are currently unassigned. Out of scope, bulk sprint assignment, story-editor redesign, or changing how already assigned tickets move between sprints.
+- Acceptance criteria:
+  - [ ] A ticket that currently shows `No sprint` on the board also shows a compact adjacent `+` shortcut for adding it to the selected current sprint.
+  - [ ] Activating the shortcut assigns the ticket to the user's currently selected sprint in one action and updates the visible sprint chip immediately.
+  - [ ] If no valid current sprint is selected, the shortcut is hidden or clearly disabled so the action never fails silently.
+  - [ ] Tickets that already have a sprint assignment do not show the shortcut.
+  - [ ] The shortcut stays lightweight and does not require opening the story editor or dragging the ticket.
+- Dependencies: current sprint selector state, sprint assignment UI, empty or invalid current-sprint handling.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: add a compact shortcut joined to the `No sprint` chip so users can add a ticket to the current sprint directly from the card.
+
 ## Ready
 
 ### Epic 8, Date-based sprint planning
@@ -391,12 +518,412 @@ Use for completed items with outcome notes.
 - Links: current session request
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
-## BACKLOG-063 - Show queued messages in a calm preview
+## BACKLOG-066 - Make Auto Groom respond visibly
 - Status: Ready
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T15:16:55.322Z
+- Updated: 2026-04-14T19:28:52.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 11
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Make `Auto Groom` produce a visible result every time instead of appearing to do nothing.
+- Outcome / user value: Users can trust the sprint-grooming shortcut because clicking `Auto Groom` produces a clear result instead of a dead-feeling control.
+- Scope notes: In scope, ensuring the `Auto Groom` control always produces one immediate visible outcome: opening Paula chat with the grooming turn started, showing a clear blocked explanation, or showing a launch failure state. In scope, preserving the selected sprint context when a valid sprint exists and making the first visible response reflect that context. In scope, identifying whether the defect sits in launch, sprint-context handoff, or user feedback after click. Out of scope, redesigning the broader Paula chat experience or inventing a separate grooming workflow outside the existing Paula path.
+- Acceptance criteria:
+  - [ ] Clicking `Auto Groom` always produces an immediate visible result instead of a dead-feeling control.
+  - [ ] When a valid sprint is selected, activating `Auto Groom` opens Paula chat and starts the grooming turn with that sprint context attached.
+  - [ ] When the action cannot proceed, the user sees a clear blocked or failure reason in the UI instead of silent failure.
+  - [ ] Repeated clicks after a failed attempt behave predictably and do not leave the control in an ambiguous in-between state.
+  - [ ] The implementation stays on the existing Paula grooming path rather than creating a separate hidden flow for `Auto Groom`.
+- Dependencies: BACKLOG-034, BACKLOG-054, Paula agent launch flow, sprint context handoff, visible action feedback.
+- Links: current session request
+- Implementation notes: Original intake preserved verbatim: bug: auto Groom does nothing
+
+## BACKLOG-067 - Submit long chat input without terminal paging trap
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T19:28:52.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 11
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Fix long Paula chat submissions that appear to send but remain stuck in terminal paging until the user presses Return again at the bottom of stdin.
+- Outcome / user value: Users can trust `Send` and Return for long prompts instead of thinking their message was submitted when it is still waiting in a hidden terminal paging state.
+- Scope notes: In scope, making one `Send` or Return action submit one long Paula prompt end to end without forcing the user into the terminal to finish it manually. In scope, handling the long-input path even when the terminal would otherwise paginate or buffer stdin, and making the visible send state match the real submission state. In scope, preserving existing short-message behavior. Out of scope, redesigning the broader Paula chat layout or changing unrelated queue behavior already tracked elsewhere.
+- Acceptance criteria:
+  - [ ] When a user submits a very long prompt from the Paula chat composer, one `Send` or Return action results in one actual prompt submission.
+  - [ ] The UI does not show a misleading sending animation when the prompt is still waiting inside terminal paging or another intermediate stdin state.
+  - [ ] If long input requires overflow handling, that handling completes within the same send action and does not require the user to switch to the terminal to finish submission manually.
+  - [ ] Short prompts continue to submit with the current expected `Send` and Return behavior.
+  - [ ] After the long prompt is submitted, the chat shows the same observable post-send behavior as a normal successful submission instead of leaving the message in a half-sent state.
+- Dependencies: Paula chat composer, send action state, terminal stdin handoff, long-input handling.
+- Links: current session request
+- Implementation notes: Original intake preserved verbatim: on very long text input in the chat, pressing Send/return starts the animation but nothing else happens. On switching to the terminal, the stdin needs to be paged through and then it's clear that it has not been submitted. Pressing return at the bottom of the stdin then submits the prompt
+
+## In Progress
+
+## Testing
+
+## Review
+
+## Done
+
+### Epic 2, Agent-driven backlog maintenance
+
+## BACKLOG-002 - Show Paula session launch and run state
+- Status: Done
+- Owner: Paula Product
+- Requester: repo-local backlog seed
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:45:13.451Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 5
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Expose whether the latest Paula launch succeeded, is still running, or has already ended.
+- Outcome / user value: Users can trust the backlog grooming flow because the UI makes it clear whether Paula is actively working or the launch failed.
+- Scope notes: In scope, a minimal visible status for the latest Paula session covering launch attempt, active run state, and terminal failure or completion. Out of scope, a full chat redesign, multi-session history, or detailed process logs.
+- Acceptance criteria:
+  - [ ] After a user launches Paula, the UI shows a visible status for the latest session instead of leaving the launch outcome implicit.
+  - [ ] A successful launch is distinguishable from a failed launch, so users can tell whether Paula actually started.
+  - [ ] While the latest Paula session is still active, the UI shows that it is running and does not imply the work is already finished.
+  - [ ] If `codex` is unavailable or the launched process exits before a usable Paula response is produced, the UI shows a clear failed state for that latest session.
+  - [ ] When the latest Paula session ends after running, the UI no longer presents it as active.
+- Dependencies: Paula agent launch endpoint, latest-session process tracking.
+- Links: server/index.ts, docs/UX_PRODUCT_OWNER_PROMPT.md
+- Implementation notes: Groomed via Ben → Tess → Paula for Sprint 5; ready for implementation.
+
+## BACKLOG-006 - Add auto Sprint planning button
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T22:59:11.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Parent card for the Auto Sprint planning flow, with the work already split into focused child stories for entry, selection logic, and applied-results feedback.
+- Outcome / user value: Keeps the Auto Sprint feature coherent as one product outcome while the delivery work stays broken into smaller, implementation-ready slices.
+- Scope notes: In scope, the overall Auto Sprint product shape, the automatic-apply decision, and the delivery split across child stories. Out of scope, treating this parent card as a standalone implementation ticket.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-007, BACKLOG-008, BACKLOG-009.
+- Links: current session request
+- Implementation notes: Kept as a completed parent umbrella after the Auto Sprint work was split into child stories covering controls, dependency-aware selection, and applied result feedback.
+
+## BACKLOG-007 - Add Auto Sprint controls to the Sprint panel
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:04:00.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 3
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Add a visible Auto Sprint entry point in the current Sprint panel with a simple total-effort input and backlog-scope choice.
+- Outcome / user value: Gives users a fast, understandable way to trigger automatic sprint population without leaving the current planning context.
+- Scope notes: In scope, action placement, label clarity, integer effort input, and a clear choice between current filtered context and broader backlog scope before running Auto Sprint. Out of scope, the selection algorithm and applied-results rendering details.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: Current Sprint panel UX, backlog filtering context.
+- Links: current session request
+- Implementation notes: Auto Sprint controls are now incorporated into the drop-to-assign panel as a two-line block, with inputs above buttons.
+
+## BACKLOG-008 - Generate dependency-aware Auto Sprint proposals
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T22:52:12.201Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 3
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Have Paula select the highest-priority eligible backlog items up to a user-set total effort cap while respecting dependencies and automatically applying the result to the sprint without re-sprinting started work.
+- Outcome / user value: Produces a realistic sprint selection faster than manual triage, reduces the chance that blocked work is chosen, and protects active sprint continuity by leaving already started work in its current sprint.
+- Scope notes: In scope, priority-based selection, effort-cap enforcement, optional use of current filters, automatic sprint application for selected items, exclusion or explanation of blocked items, and preserving sprint assignments for work already in `In Progress`, `Testing`, `Review`, or `Done`. Out of scope, sophisticated capacity planning beyond the single effort cap and automatic reassignment of started work across sprints.
+- Acceptance criteria:
+  - [ ] Auto Sprint evaluates either the current filtered backlog set or the broader backlog based on the user’s selection.
+  - [ ] Auto Sprint selects the highest-priority eligible items without exceeding the entered total effort cap.
+  - [ ] Items with unresolved dependencies are excluded from selection or returned with a clear blocking reason.
+  - [ ] When Auto Sprint completes successfully, the selected stories are assigned to the target sprint automatically rather than waiting for a separate manual apply step.
+  - [ ] The selection rules are consistent enough that the same input context yields the same proposal.
+  - [ ] Auto Sprint does not move a ticket into the target sprint when that ticket is already in `In Progress`, `Testing`, `Review`, or `Done` with a different sprint assignment.
+- Dependencies: BACKLOG-007, backlog filtering context, Paula agent invocation, dependency interpretation rules.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-009 - Show ordered Auto Sprint apply results
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T22:53:18.107Z
+- Due Date: 
+- Priority: P2
+- Effort: 1
+- Sprint Assigned: Sprint 3
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Present Auto Sprint results as an ordered summary of what was applied so users can see which stories were added to the sprint and why others were excluded.
+- Outcome / user value: Helps users trust the automatic action by showing what changed, what order makes sense for execution, and which items stayed out of the sprint.
+- Scope notes: In scope, ordered applied items, visible total effort used, and clear explanation for unselected blocked or over-cap items after Auto Sprint runs. Out of scope, a separate approval gate before sprint assignment.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-008.
+- Links: current session request
+- Implementation notes: UI now renders the ordered applied list plus skipped items and reasons after Auto Sprint runs.
+
+## BACKLOG-010 - Add quick-add story intake to the Inbox lane
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T21:35:15Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 1
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Add a plus icon at the top of the Inbox lane that opens the existing Paula chat window for quick story intake.
+- Outcome / user value: Lets users capture ideas quickly without leaving the board, using the current Paula chat flow instead of a separate manual edit form.
+- Scope notes: In scope, Inbox-lane plus icon placement and opening the existing Paula chat window for story intake. Out of scope, a new free-text edit window or detailed story grooming inside the intake control itself.
+- Acceptance criteria:
+  - [ ] The top of the Inbox lane shows a visible plus icon for adding a new request.
+  - [ ] Activating the control opens the existing Paula chat window.
+  - [ ] The intake flow is clear enough that a first-time user can understand how to capture a request without extra instruction.
+  - [ ] The control does not open the manual story edit window.
+- Dependencies: Inbox lane UI, Paula chat window.
+- Links: current session request
+- Implementation notes: Inbox plus now opens the existing Paula chat panel instead of the manual story editor.
+
+## BACKLOG-011 - Launch grooming chat from new request intake
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:14:29Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 4
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Kick off a Paula grooming conversation after a new plain-text request is submitted and automatically open the chat window when needed.
+- Outcome / user value: Moves users directly from rough idea capture into guided backlog grooming without forcing manual setup steps.
+- Scope notes: In scope, triggering Paula immediately after quick-add intake submission, automatically opening the chat window when it is closed, and passing the submitted request text into the first grooming turn. Out of scope, creating a general-purpose chat experience unrelated to intake-driven backlog grooming.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-010, Paula agent launch flow, chat window state handling.
+- Links: current session request
+- Implementation notes: Implemented quick-add intake handoff to Paula chat, with automatic chat opening and request-text pass-through.
+
+## BACKLOG-013 - Strengthen Paula prompt for feedback synthesis
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T21:27:04Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 1
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Update Paula guidance so she combines related feedback into coherent larger stories when appropriate and applies a sharper UX-product lens.
+- Outcome / user value: Produces cleaner backlog structure and better story framing from messy incoming feedback, with stronger focus on the details that materially shape user experience.
+- Scope notes: In scope, prompt guidance for combining related feedback into coherent stories or epics when that improves backlog quality, and clearer instruction that Paula should act as a UX-focused product owner with exceptional attention to meaningful user-experience details. Out of scope, changing the backlog schema or turning Paula into a coding agent.
+- Acceptance criteria:
+  - [ ] Paula guidance explicitly allows combining related feedback into larger coherent stories when that is the better backlog shape.
+  - [ ] Paula guidance reinforces that she should prioritize UX-critical details rather than superficial polish.
+  - [ ] The prompt update preserves Paula’s backlog-only role boundaries and existing markdown-structure rules.
+  - [ ] The revised guidance is specific enough to improve backlog grooming quality from raw plain-text feedback.
+- Dependencies: Paula prompt maintenance approach, docs/UX_PRODUCT_OWNER_PROMPT.md.
+- Links: current session request, docs/UX_PRODUCT_OWNER_PROMPT.md
+- Implementation notes: Added explicit guidance to merge related feedback into coherent stories or epics, and to focus on UX-critical details.
+
+## BACKLOG-014 - Add chat undo for the last backlog edit
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:11:25Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 4
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Add an Undo action in the chat window that restores the backlog file to the version from before Paula’s most recent backlog edit.
+- Outcome / user value: Gives users a fast recovery path when the latest agent-driven backlog edit corrupts the file or makes an obviously bad change.
+- Scope notes: In scope, a visible Undo control in the chat window, rollback to the last pre-Paula-edit backlog version, and clear confirmation of what version will be restored. Out of scope, undoing arbitrary user edits, multi-step undo stacks beyond Paula’s most recent edit, and recovery for non-backlog files.
+- Acceptance criteria:
+  - [ ] The chat window shows an Undo action after Paula changes the backlog file.
+  - [ ] Triggering Undo restores the backlog file to the version from before Paula’s most recent backlog edit.
+  - [ ] The UI makes it clear that Undo affects the selected backlog file only.
+  - [ ] Users receive a clear success or failure result after the rollback attempt.
+  - [ ] If no reversible Paula backlog edit exists, the UI explains why Undo is unavailable.
+- Dependencies: Chat window state, backlog file versioning or backup strategy, message-to-write tracking.
+- Links: current session request
+- Implementation notes: Implemented Undo around the last Paula backlog edit using the existing rollback/backup path, with scoped confirmation and unavailable-state messaging.
+
+## BACKLOG-015 - Render Paula chat output as clean Paula-only messages
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T21:26:00.000Z
+- Due Date: 
+- Priority: P0
+- Effort: 2
+- Sprint Assigned: Sprint 1
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Show only properly formatted Paula responses in the chat stream instead of leaking raw Codex output lines or mixing in the user’s own prompt text.
+- Outcome / user value: Keeps the grooming chat readable and trustworthy so users see one clean Paula voice instead of noisy agent internals.
+- Scope notes: In scope, filtering or parsing chat output so only intended Paula-visible lines render as Paula bubbles, preserving the `PAULA>>` contract, and preventing echoed user prompt text from appearing as Paula output. Out of scope, redesigning the entire chat UI or changing Paula’s backlog-only role.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: Chat transcript parsing, Paula output contract enforcement, agent message transport.
+- Links: current session request
+- Implementation notes: AgentTerminal now ignores non-`PAULA>>` lines, drops echoed user request variants, and suppresses malformed output fragments before rendering chat bubbles.
+
+## BACKLOG-032 - Prevent Paula from re-sprinting started work
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:35:07.032Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 4
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Strengthen the Paula prompt so she never automatically moves work that has already started out of its sprint.
+- Outcome / user value: Protects active delivery context by keeping in-flight work stable unless a user explicitly overrides the sprint assignment.
+- Scope notes: In scope, prompt rules that forbid Paula from automatically changing `Sprint Assigned` for tickets already in `In Progress`, `Testing`, `Review`, or `Done` after they have started in a sprint, and that require a user-directed manual override for any reassignment. Out of scope, changing how users manually edit sprint assignments in the UI or changing sprint behavior for tickets that have not started.
+- Acceptance criteria:
+  - [ ] Paula guidance explicitly forbids automatically moving a ticket to another sprint when the ticket is in `In Progress`, `Testing`, `Review`, or `Done` and already has a sprint assignment.
+  - [ ] The prompt makes clear that only an explicit user-directed manual sprint change can override that protection.
+  - [ ] Tickets that have not started implementation are not incorrectly covered by the started-work protection rule.
+  - [ ] The rule is written clearly enough that Paula preserves sprint continuity during grooming and auto-planning work.
+- Dependencies: Paula prompt maintenance approach, sprint assignment rules.
+- Links: current session request, docs/UX_PRODUCT_OWNER_PROMPT.md
+- Implementation notes: Prompt updated to block automatic re-sprints for started work; Tess and Paula sign-off completed.
+
+## BACKLOG-034 - Add Auto Groom entry point for the current sprint
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:50:00Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 5
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Add an `Auto Groom` button below `Auto Sprint` that opens Paula chat and starts grooming with the current sprint as context.
+- Outcome / user value: Users can review and tighten the active sprint from the same planning surface instead of manually opening chat and restating sprint context.
+- Scope notes: In scope, placing an `Auto Groom` action below the existing `Auto Sprint` control, opening the existing Paula chat flow, and passing the currently selected sprint context into the first grooming turn. Out of scope, automatic backlog edits without Paula chat output, multi-sprint grooming, or redesigning the Sprint panel.
+- Acceptance criteria:
+  - [ ] An `Auto Groom` control appears below `Auto Sprint` in the Sprint panel.
+  - [ ] Activating `Auto Groom` opens Paula chat.
+  - [ ] The selected current sprint is passed into the initial grooming context.
+  - [ ] The action is blocked or clearly explained when no valid sprint is available.
+- Dependencies: Current Sprint panel controls, Paula agent launch flow, sprint context handoff into chat.
+- Links: current session request
+- Implementation notes: Groomed through Ben for implementation shape, Tess for validation of the launch flow and sprint-context handoff, and Paula for product sign-off. The Sprint panel now exposes `Auto Groom` below `Auto Sprint`, opens Paula chat, seeds the selected sprint as context, and shows a clear blocked state when no valid sprint is available.
+
+## BACKLOG-036 - Seed Inbox intake chat with new-story context
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T00:15:00.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 6
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: When a user clicks the Inbox plus icon, prepend a tiny hidden context so Paula consistently treats the submitted text as a new Inbox story request.
+- Outcome / user value: Users can enter rough ideas from the Inbox entry point without restating that the message should create a new backlog story.
+- Scope notes: In scope, adding a small hidden context prefix to the text routed from the Inbox plus flow into Paula so the request is interpreted as new story intake for the Inbox, while preserving the user's original text verbatim after the prefix. Out of scope, changing the broader Paula prompt contract, adding a separate intake form, or rewriting the user's original request beyond the minimal prepended context. The hidden context should normalize the intent to `Inbox`, not preserve user typos.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-010, BACKLOG-011, Paula intake prompt handling.
+- Links: current session request
+- Implementation notes: Inbox plus now arms a hidden intake prefix on the next Paula submission only, preserving the user's text verbatim after the prefix.
+
+## BACKLOG-054 - Preserve first-run Auto Groom launch intent
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T10:15:07Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 9
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Keep the initial `Auto Groom` launch instruction intact when Paula is not yet initialized so the first click both opens chat and starts the intended grooming action.
+- Outcome / user value: Users can trust the first `Auto Groom` click to start the expected Paula workflow instead of opening chat in an idle state that drops the requested action.
+- Scope notes: In scope, preserving the first-launch action payload when `Auto Groom` opens and initializes Paula from a cold state, applying the same launch-intent handling to `Auto Sprint` if it uses the same Paula-start path, and making the first visible Paula turn reflect the requested action and sprint context. Out of scope, redesigning the chat window, changing the grooming prompt contract, or adding unrelated multi-action queueing.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-002, BACKLOG-034, Paula agent launch flow, chat window initialization state, sprint context handoff into chat.
+- Links: current session request
+- Implementation notes: Auto Groom now sends a real launch instruction through the agent run path after cold-start context sync, so the first Paula turn keeps the sprint context and action intent intact. Auto Sprint uses the same terminal-session launch path with context-first handoff. Build passed.
+
+## BACKLOG-055 - Queue Paula chat commands without overwriting draft input
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T10:11:00.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 9
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Update the Paula chat interface so command actions are added as tab-queued commands instead of steering the conversation by overwriting or hijacking the current Enter-send input.
+- Outcome / user value: Users can trigger Paula commands without losing typed draft text or feeling that the chat is unexpectedly taking over their message box.
+- Scope notes: In scope, treating command actions as queued items that can be inserted or staged through the tab-oriented command flow without overwriting any existing draft message, and making the queued command state legible before send. In scope, preserving normal Enter-send behavior for user-authored chat text. Out of scope, redesigning the full composer, changing Paula command semantics, or adding a broad multi-step workflow builder.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: Paula chat window, chat composer behavior, command trigger UI, command queue presentation.
+- Links: current session request
+- Implementation notes: Product direction preserved verbatim: update the Paula chat interface so commands are sent as tab-queued commands rather than Enter-overwriting or steering commands. Implemented queue handlers so queued commands are staged without clearing the draft, can be sent from the queue, and normal Enter-send stays unchanged. Build passed.
+
+## BACKLOG-063 - Show queued messages in a calm preview
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T15:17:38.955Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
@@ -415,14 +942,6 @@ Use for completed items with outcome notes.
 - Dependencies: Paula chat window, queued-message preview state, composer layout, send control styling.
 - Links: current session request
 - Implementation notes: Original intake preserved, but tightened for UX: the queued text should read as a soft preview, live above the composer, and vanish cleanly after send instead of sitting under the buttons.
-
-## In Progress
-
-## Testing
-
-## Review
-
-## Done
 
 ### Epic 4, Ticket traceability
 
@@ -767,348 +1286,6 @@ Use for completed items with outcome notes.
 - Dependencies: BACKLOG-020, BACKLOG-023, BACKLOG-049, traceability metadata availability, traceability metadata lookup contract, ticket-editor helper contract decision.
 - Links: current session request
 - Implementation notes: Verified in-app git-link rendering plus separate pending/helper states, and build validated locally with `npm run build`.
-
-### Epic 2, Agent-driven backlog maintenance
-
-## BACKLOG-002 - Show Paula session launch and run state
-- Status: Done
-- Owner: Paula Product
-- Requester: repo-local backlog seed
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:45:13.451Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 5
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Expose whether the latest Paula launch succeeded, is still running, or has already ended.
-- Outcome / user value: Users can trust the backlog grooming flow because the UI makes it clear whether Paula is actively working or the launch failed.
-- Scope notes: In scope, a minimal visible status for the latest Paula session covering launch attempt, active run state, and terminal failure or completion. Out of scope, a full chat redesign, multi-session history, or detailed process logs.
-- Acceptance criteria:
-  - [ ] After a user launches Paula, the UI shows a visible status for the latest session instead of leaving the launch outcome implicit.
-  - [ ] A successful launch is distinguishable from a failed launch, so users can tell whether Paula actually started.
-  - [ ] While the latest Paula session is still active, the UI shows that it is running and does not imply the work is already finished.
-  - [ ] If `codex` is unavailable or the launched process exits before a usable Paula response is produced, the UI shows a clear failed state for that latest session.
-  - [ ] When the latest Paula session ends after running, the UI no longer presents it as active.
-- Dependencies: Paula agent launch endpoint, latest-session process tracking.
-- Links: server/index.ts, docs/UX_PRODUCT_OWNER_PROMPT.md
-- Implementation notes: Groomed via Ben → Tess → Paula for Sprint 5; ready for implementation.
-
-## BACKLOG-006 - Add auto Sprint planning button
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T22:59:11.000Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: 
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Parent card for the Auto Sprint planning flow, with the work already split into focused child stories for entry, selection logic, and applied-results feedback.
-- Outcome / user value: Keeps the Auto Sprint feature coherent as one product outcome while the delivery work stays broken into smaller, implementation-ready slices.
-- Scope notes: In scope, the overall Auto Sprint product shape, the automatic-apply decision, and the delivery split across child stories. Out of scope, treating this parent card as a standalone implementation ticket.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: BACKLOG-007, BACKLOG-008, BACKLOG-009.
-- Links: current session request
-- Implementation notes: Kept as a completed parent umbrella after the Auto Sprint work was split into child stories covering controls, dependency-aware selection, and applied result feedback.
-
-## BACKLOG-007 - Add Auto Sprint controls to the Sprint panel
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:04:00.000Z
-- Due Date: 
-- Priority: P1
-- Effort: 1
-- Sprint Assigned: Sprint 3
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Add a visible Auto Sprint entry point in the current Sprint panel with a simple total-effort input and backlog-scope choice.
-- Outcome / user value: Gives users a fast, understandable way to trigger automatic sprint population without leaving the current planning context.
-- Scope notes: In scope, action placement, label clarity, integer effort input, and a clear choice between current filtered context and broader backlog scope before running Auto Sprint. Out of scope, the selection algorithm and applied-results rendering details.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: Current Sprint panel UX, backlog filtering context.
-- Links: current session request
-- Implementation notes: Auto Sprint controls are now incorporated into the drop-to-assign panel as a two-line block, with inputs above buttons.
-
-## BACKLOG-008 - Generate dependency-aware Auto Sprint proposals
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T22:52:12.201Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 3
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Have Paula select the highest-priority eligible backlog items up to a user-set total effort cap while respecting dependencies and automatically applying the result to the sprint without re-sprinting started work.
-- Outcome / user value: Produces a realistic sprint selection faster than manual triage, reduces the chance that blocked work is chosen, and protects active sprint continuity by leaving already started work in its current sprint.
-- Scope notes: In scope, priority-based selection, effort-cap enforcement, optional use of current filters, automatic sprint application for selected items, exclusion or explanation of blocked items, and preserving sprint assignments for work already in `In Progress`, `Testing`, `Review`, or `Done`. Out of scope, sophisticated capacity planning beyond the single effort cap and automatic reassignment of started work across sprints.
-- Acceptance criteria:
-  - [ ] Auto Sprint evaluates either the current filtered backlog set or the broader backlog based on the user’s selection.
-  - [ ] Auto Sprint selects the highest-priority eligible items without exceeding the entered total effort cap.
-  - [ ] Items with unresolved dependencies are excluded from selection or returned with a clear blocking reason.
-  - [ ] When Auto Sprint completes successfully, the selected stories are assigned to the target sprint automatically rather than waiting for a separate manual apply step.
-  - [ ] The selection rules are consistent enough that the same input context yields the same proposal.
-  - [ ] Auto Sprint does not move a ticket into the target sprint when that ticket is already in `In Progress`, `Testing`, `Review`, or `Done` with a different sprint assignment.
-- Dependencies: BACKLOG-007, backlog filtering context, Paula agent invocation, dependency interpretation rules.
-- Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
-
-## BACKLOG-009 - Show ordered Auto Sprint apply results
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T22:53:18.107Z
-- Due Date: 
-- Priority: P2
-- Effort: 1
-- Sprint Assigned: Sprint 3
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Present Auto Sprint results as an ordered summary of what was applied so users can see which stories were added to the sprint and why others were excluded.
-- Outcome / user value: Helps users trust the automatic action by showing what changed, what order makes sense for execution, and which items stayed out of the sprint.
-- Scope notes: In scope, ordered applied items, visible total effort used, and clear explanation for unselected blocked or over-cap items after Auto Sprint runs. Out of scope, a separate approval gate before sprint assignment.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: BACKLOG-008.
-- Links: current session request
-- Implementation notes: UI now renders the ordered applied list plus skipped items and reasons after Auto Sprint runs.
-
-## BACKLOG-010 - Add quick-add story intake to the Inbox lane
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T21:35:15Z
-- Due Date: 
-- Priority: P1
-- Effort: 1
-- Sprint Assigned: Sprint 1
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Add a plus icon at the top of the Inbox lane that opens the existing Paula chat window for quick story intake.
-- Outcome / user value: Lets users capture ideas quickly without leaving the board, using the current Paula chat flow instead of a separate manual edit form.
-- Scope notes: In scope, Inbox-lane plus icon placement and opening the existing Paula chat window for story intake. Out of scope, a new free-text edit window or detailed story grooming inside the intake control itself.
-- Acceptance criteria:
-  - [ ] The top of the Inbox lane shows a visible plus icon for adding a new request.
-  - [ ] Activating the control opens the existing Paula chat window.
-  - [ ] The intake flow is clear enough that a first-time user can understand how to capture a request without extra instruction.
-  - [ ] The control does not open the manual story edit window.
-- Dependencies: Inbox lane UI, Paula chat window.
-- Links: current session request
-- Implementation notes: Inbox plus now opens the existing Paula chat panel instead of the manual story editor.
-
-## BACKLOG-011 - Launch grooming chat from new request intake
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:14:29Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 4
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Kick off a Paula grooming conversation after a new plain-text request is submitted and automatically open the chat window when needed.
-- Outcome / user value: Moves users directly from rough idea capture into guided backlog grooming without forcing manual setup steps.
-- Scope notes: In scope, triggering Paula immediately after quick-add intake submission, automatically opening the chat window when it is closed, and passing the submitted request text into the first grooming turn. Out of scope, creating a general-purpose chat experience unrelated to intake-driven backlog grooming.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: BACKLOG-010, Paula agent launch flow, chat window state handling.
-- Links: current session request
-- Implementation notes: Implemented quick-add intake handoff to Paula chat, with automatic chat opening and request-text pass-through.
-
-## BACKLOG-013 - Strengthen Paula prompt for feedback synthesis
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T21:27:04Z
-- Due Date: 
-- Priority: P1
-- Effort: 1
-- Sprint Assigned: Sprint 1
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Update Paula guidance so she combines related feedback into coherent larger stories when appropriate and applies a sharper UX-product lens.
-- Outcome / user value: Produces cleaner backlog structure and better story framing from messy incoming feedback, with stronger focus on the details that materially shape user experience.
-- Scope notes: In scope, prompt guidance for combining related feedback into coherent stories or epics when that improves backlog quality, and clearer instruction that Paula should act as a UX-focused product owner with exceptional attention to meaningful user-experience details. Out of scope, changing the backlog schema or turning Paula into a coding agent.
-- Acceptance criteria:
-  - [ ] Paula guidance explicitly allows combining related feedback into larger coherent stories when that is the better backlog shape.
-  - [ ] Paula guidance reinforces that she should prioritize UX-critical details rather than superficial polish.
-  - [ ] The prompt update preserves Paula’s backlog-only role boundaries and existing markdown-structure rules.
-  - [ ] The revised guidance is specific enough to improve backlog grooming quality from raw plain-text feedback.
-- Dependencies: Paula prompt maintenance approach, docs/UX_PRODUCT_OWNER_PROMPT.md.
-- Links: current session request, docs/UX_PRODUCT_OWNER_PROMPT.md
-- Implementation notes: Added explicit guidance to merge related feedback into coherent stories or epics, and to focus on UX-critical details.
-
-## BACKLOG-014 - Add chat undo for the last backlog edit
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:11:25Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 4
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Add an Undo action in the chat window that restores the backlog file to the version from before Paula’s most recent backlog edit.
-- Outcome / user value: Gives users a fast recovery path when the latest agent-driven backlog edit corrupts the file or makes an obviously bad change.
-- Scope notes: In scope, a visible Undo control in the chat window, rollback to the last pre-Paula-edit backlog version, and clear confirmation of what version will be restored. Out of scope, undoing arbitrary user edits, multi-step undo stacks beyond Paula’s most recent edit, and recovery for non-backlog files.
-- Acceptance criteria:
-  - [ ] The chat window shows an Undo action after Paula changes the backlog file.
-  - [ ] Triggering Undo restores the backlog file to the version from before Paula’s most recent backlog edit.
-  - [ ] The UI makes it clear that Undo affects the selected backlog file only.
-  - [ ] Users receive a clear success or failure result after the rollback attempt.
-  - [ ] If no reversible Paula backlog edit exists, the UI explains why Undo is unavailable.
-- Dependencies: Chat window state, backlog file versioning or backup strategy, message-to-write tracking.
-- Links: current session request
-- Implementation notes: Implemented Undo around the last Paula backlog edit using the existing rollback/backup path, with scoped confirmation and unavailable-state messaging.
-
-## BACKLOG-015 - Render Paula chat output as clean Paula-only messages
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T21:26:00.000Z
-- Due Date: 
-- Priority: P0
-- Effort: 2
-- Sprint Assigned: Sprint 1
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Show only properly formatted Paula responses in the chat stream instead of leaking raw Codex output lines or mixing in the user’s own prompt text.
-- Outcome / user value: Keeps the grooming chat readable and trustworthy so users see one clean Paula voice instead of noisy agent internals.
-- Scope notes: In scope, filtering or parsing chat output so only intended Paula-visible lines render as Paula bubbles, preserving the `PAULA>>` contract, and preventing echoed user prompt text from appearing as Paula output. Out of scope, redesigning the entire chat UI or changing Paula’s backlog-only role.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: Chat transcript parsing, Paula output contract enforcement, agent message transport.
-- Links: current session request
-- Implementation notes: AgentTerminal now ignores non-`PAULA>>` lines, drops echoed user request variants, and suppresses malformed output fragments before rendering chat bubbles.
-
-## BACKLOG-032 - Prevent Paula from re-sprinting started work
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:35:07.032Z
-- Due Date: 
-- Priority: P1
-- Effort: 1
-- Sprint Assigned: Sprint 4
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Strengthen the Paula prompt so she never automatically moves work that has already started out of its sprint.
-- Outcome / user value: Protects active delivery context by keeping in-flight work stable unless a user explicitly overrides the sprint assignment.
-- Scope notes: In scope, prompt rules that forbid Paula from automatically changing `Sprint Assigned` for tickets already in `In Progress`, `Testing`, `Review`, or `Done` after they have started in a sprint, and that require a user-directed manual override for any reassignment. Out of scope, changing how users manually edit sprint assignments in the UI or changing sprint behavior for tickets that have not started.
-- Acceptance criteria:
-  - [ ] Paula guidance explicitly forbids automatically moving a ticket to another sprint when the ticket is in `In Progress`, `Testing`, `Review`, or `Done` and already has a sprint assignment.
-  - [ ] The prompt makes clear that only an explicit user-directed manual sprint change can override that protection.
-  - [ ] Tickets that have not started implementation are not incorrectly covered by the started-work protection rule.
-  - [ ] The rule is written clearly enough that Paula preserves sprint continuity during grooming and auto-planning work.
-- Dependencies: Paula prompt maintenance approach, sprint assignment rules.
-- Links: current session request, docs/UX_PRODUCT_OWNER_PROMPT.md
-- Implementation notes: Prompt updated to block automatic re-sprints for started work; Tess and Paula sign-off completed.
-
-## BACKLOG-034 - Add Auto Groom entry point for the current sprint
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:50:00Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 5
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Add an `Auto Groom` button below `Auto Sprint` that opens Paula chat and starts grooming with the current sprint as context.
-- Outcome / user value: Users can review and tighten the active sprint from the same planning surface instead of manually opening chat and restating sprint context.
-- Scope notes: In scope, placing an `Auto Groom` action below the existing `Auto Sprint` control, opening the existing Paula chat flow, and passing the currently selected sprint context into the first grooming turn. Out of scope, automatic backlog edits without Paula chat output, multi-sprint grooming, or redesigning the Sprint panel.
-- Acceptance criteria:
-  - [ ] An `Auto Groom` control appears below `Auto Sprint` in the Sprint panel.
-  - [ ] Activating `Auto Groom` opens Paula chat.
-  - [ ] The selected current sprint is passed into the initial grooming context.
-  - [ ] The action is blocked or clearly explained when no valid sprint is available.
-- Dependencies: Current Sprint panel controls, Paula agent launch flow, sprint context handoff into chat.
-- Links: current session request
-- Implementation notes: Groomed through Ben for implementation shape, Tess for validation of the launch flow and sprint-context handoff, and Paula for product sign-off. The Sprint panel now exposes `Auto Groom` below `Auto Sprint`, opens Paula chat, seeds the selected sprint as context, and shows a clear blocked state when no valid sprint is available.
-
-## BACKLOG-036 - Seed Inbox intake chat with new-story context
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T00:15:00.000Z
-- Due Date: 
-- Priority: P1
-- Effort: 1
-- Sprint Assigned: Sprint 6
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: When a user clicks the Inbox plus icon, prepend a tiny hidden context so Paula consistently treats the submitted text as a new Inbox story request.
-- Outcome / user value: Users can enter rough ideas from the Inbox entry point without restating that the message should create a new backlog story.
-- Scope notes: In scope, adding a small hidden context prefix to the text routed from the Inbox plus flow into Paula so the request is interpreted as new story intake for the Inbox, while preserving the user's original text verbatim after the prefix. Out of scope, changing the broader Paula prompt contract, adding a separate intake form, or rewriting the user's original request beyond the minimal prepended context. The hidden context should normalize the intent to `Inbox`, not preserve user typos.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: BACKLOG-010, BACKLOG-011, Paula intake prompt handling.
-- Links: current session request
-- Implementation notes: Inbox plus now arms a hidden intake prefix on the next Paula submission only, preserving the user's text verbatim after the prefix.
-
-## BACKLOG-054 - Preserve first-run Auto Groom launch intent
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T10:15:07Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 9
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Keep the initial `Auto Groom` launch instruction intact when Paula is not yet initialized so the first click both opens chat and starts the intended grooming action.
-- Outcome / user value: Users can trust the first `Auto Groom` click to start the expected Paula workflow instead of opening chat in an idle state that drops the requested action.
-- Scope notes: In scope, preserving the first-launch action payload when `Auto Groom` opens and initializes Paula from a cold state, applying the same launch-intent handling to `Auto Sprint` if it uses the same Paula-start path, and making the first visible Paula turn reflect the requested action and sprint context. Out of scope, redesigning the chat window, changing the grooming prompt contract, or adding unrelated multi-action queueing.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: BACKLOG-002, BACKLOG-034, Paula agent launch flow, chat window initialization state, sprint context handoff into chat.
-- Links: current session request
-- Implementation notes: Auto Groom now sends a real launch instruction through the agent run path after cold-start context sync, so the first Paula turn keeps the sprint context and action intent intact. Auto Sprint uses the same terminal-session launch path with context-first handoff. Build passed.
-
-## BACKLOG-055 - Queue Paula chat commands without overwriting draft input
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T10:11:00.000Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 9
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Update the Paula chat interface so command actions are added as tab-queued commands instead of steering the conversation by overwriting or hijacking the current Enter-send input.
-- Outcome / user value: Users can trigger Paula commands without losing typed draft text or feeling that the chat is unexpectedly taking over their message box.
-- Scope notes: In scope, treating command actions as queued items that can be inserted or staged through the tab-oriented command flow without overwriting any existing draft message, and making the queued command state legible before send. In scope, preserving normal Enter-send behavior for user-authored chat text. Out of scope, redesigning the full composer, changing Paula command semantics, or adding a broad multi-step workflow builder.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: Paula chat window, chat composer behavior, command trigger UI, command queue presentation.
-- Links: current session request
-- Implementation notes: Product direction preserved verbatim: update the Paula chat interface so commands are sent as tab-queued commands rather than Enter-overwriting or steering commands. Implemented queue handlers so queued commands are staged without clearing the draft, can be sent from the queue, and normal Enter-send stays unchanged. Build passed.
 
 ### Epic 5, Workflow states and card emphasis
 

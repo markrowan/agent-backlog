@@ -231,6 +231,13 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       return;
     }
 
+    if (/^PAULA>>\s*$/i.test(paulaLine)) {
+      if (assistantBufferRef.current.trim()) {
+        flushAssistantBuffer();
+      }
+      return;
+    }
+
     const paulaMessage = extractPaulaMessage(paulaLine);
     if (!paulaMessage) {
       return;

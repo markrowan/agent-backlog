@@ -1110,10 +1110,10 @@ function App() {
     labels.set(ALL_STATUSES, ALL_STATUSES);
 
     for (const status of STATUSES) {
-      const openCount = (data?.document.items ?? []).filter(
-        (item) => item.status === status && item.status !== "Done",
+      const count = (data?.document.items ?? []).filter(
+        (item) => item.status === status && (status === "Done" || item.status !== "Done"),
       ).length;
-      labels.set(status, `${status} (${openCount})`);
+      labels.set(status, `${status} (${count})`);
     }
 
     return labels;
