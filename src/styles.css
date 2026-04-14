@@ -1484,6 +1484,8 @@ button {
 }
 
 .story-card {
+  display: flex;
+  flex-direction: column;
   padding: 16px;
   border-radius: 22px;
   background: var(--panel-strong);
@@ -1499,15 +1501,60 @@ button {
 }
 
 .story-card--current-sprint {
-  background: linear-gradient(180deg, color-mix(in srgb, white 58%, var(--accent-soft)), color-mix(in srgb, white 82%, var(--accent-soft)));
-  border-color: color-mix(in srgb, var(--accent) 34%, white);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), 0 14px 30px color-mix(in srgb, var(--accent) 14%, transparent);
+  background: linear-gradient(180deg, #fbfdff 0%, #f1f7ff 100%);
+  border-color: #dbeafe;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.1), 0 10px 20px rgba(59, 130, 246, 0.06);
+}
+
+.story-card--blocked {
+  position: relative;
+  background: linear-gradient(180deg, #fff5f5 0%, #feeaea 100%);
+  border-color: #f87171;
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.16), 0 12px 24px rgba(220, 38, 38, 0.1);
+}
+
+.story-card--blocked .story-title-button,
+.story-card--blocked .story-summary-button,
+.story-card--blocked .story-id,
+.story-card--blocked .story-last-updated,
+.story-card--blocked .story-pill,
+.story-card--blocked .story-epic-label,
+.story-card--blocked .story-topline {
+  color: #7f1d1d;
+}
+
+.story-card--blocked .story-pill,
+.story-card--blocked .priority-chip,
+.story-card--blocked .effort-chip {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(220, 38, 38, 0.42);
+}
+
+.story-card--done {
+  background: linear-gradient(180deg, #fbfefc 0%, #f2fcf5 100%);
+  border-color: #dcfce7;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.09), 0 8px 18px rgba(34, 197, 94, 0.05);
+}
+
+.story-card--done .story-title-button,
+.story-card--done .story-summary-button,
+.story-card--done .story-id,
+.story-card--done .story-last-updated,
+.story-card--done .story-pill,
+.story-card--done .story-epic-label,
+.story-card--done .story-topline {
+  color: #166534;
+}
+
+.story-card--done .story-pill,
+.story-card--done .priority-chip,
+.story-card--done .effort-chip {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(34, 197, 94, 0.28);
 }
 
 .story-card.sprint-story-card--done {
-  background: linear-gradient(180deg, color-mix(in srgb, white 38%, var(--line)), color-mix(in srgb, white 54%, var(--line)));
-  border-color: color-mix(in srgb, var(--muted) 52%, var(--line));
-  opacity: 0.9;
+  opacity: 0.94;
 }
 
 .story-topline,
@@ -1531,7 +1578,8 @@ button {
 }
 
 .story-meta-line {
-  margin-top: 14px;
+  margin-top: auto;
+  padding-top: 14px;
   justify-content: flex-start;
   flex-wrap: wrap;
 }
@@ -1574,10 +1622,74 @@ button {
 }
 
 .story-last-updated {
-  margin-top: 8px;
   color: color-mix(in srgb, var(--muted) 72%, transparent);
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.story-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.story-card-footer-chips {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.story-blocked-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #991b1b;
+  color: #fff5f5;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.story-done-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #166534;
+  color: #f0fdf4;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.story-planned-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #1d4ed8;
+  color: #eff6ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .story-id {

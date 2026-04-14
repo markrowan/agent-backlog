@@ -17,6 +17,7 @@ const EMPTY_ITEM: BacklogItem = {
   id: "",
   title: "",
   status: "Inbox",
+  lane: "Inbox",
   epic: "",
   owner: "Paula Product",
   requester: "",
@@ -362,6 +363,26 @@ function quickEditValue(item: BacklogItem, field: QuickEditField) {
   return item.dueDate;
 }
 
+function parseTraceabilityLinks(rawLinks: string) {
+  const urls = { git: "", pr: "" };
+  const lines = rawLinks.split(/\r?\n/);
+
+  for (const line of lines) {
+    const match = line.match(/^\s*(git|pr|pull request|branch|commit)\s*[:=-]\s*(\S.*)$/i);
+    if (!match) continue;
+    const label = match[1].toLowerCase();
+    const url = match[2].trim();
+    if (!url) continue;
+    if (label === "pr" || label === "pull request") {
+      urls.pr = url;
+      continue;
+    }
+    urls.git = url;
+  }
+
+  return urls;
+}
+
 function saveIcon() {
   return <Download aria-hidden="true" strokeWidth={1.9} />;
 }
@@ -484,6 +505,7 @@ function App() {
   const [pendingSprintAssignmentItemId, setPendingSprintAssignmentItemId] = useState<string | null>(null);
   const [showUnsavedChangesNotice, setShowUnsavedChangesNotice] = useState(false);
   const [showPaulaPanel, setShowPaulaPanel] = useState(false);
+  const [inboxIntakeArmed, setInboxIntakeArmed] = useState(false);
   const [paulaPanelExpanded, setPaulaPanelExpanded] = useState(false);
   const [paulaPanelPosition, setPaulaPanelPosition] = useState(defaultPaulaPanelPosition);
   const paulaCompactPositionRef = useRef(defaultPaulaPanelPosition(false));
@@ -867,7 +889,8 @@ function App() {
           continue;
         }
       }
-      const lane = statuses.get(item.status)!;
+      const laneKey = item.status === "Blocked" ? (item.lane ?? "In Progress") : item.status;
+      const lane = statuses.get(laneKey)!;
       const epic = item.epic || "Unassigned";
       const bucket = lane.get(epic) ?? [];
       bucket.push(item);
@@ -1424,6 +1447,7 @@ function App() {
     const trimmedValue = quickEdit.value.trim();
     const nextItem: BacklogItem = {
       ...item,
+      lane: item.lane,
       title: quickEdit.field === "title" ? trimmedValue || item.title : item.title,
       summary: quickEdit.field === "summary" ? trimmedValue : item.summary,
       priority: quickEdit.field === "priority" ? (quickEdit.value as Priority) : item.priority,
@@ -1671,6 +1695,8 @@ function App() {
     setShowConfigPanel((current) => (current ? null : { x, y }));
   }
 
+  const inboxStoryContext = 'Hidden intake context: treat this as a new Inbox story request for Paula. Preserve the user\'s original text verbatim after this prefix.';
+
   function openPaulaPanel() {
     setPaulaPanelPosition((current) => clampPaulaPanelPosition(current, paulaPanelExpanded));
     setShowPaulaPanel(true);
@@ -1742,6 +1768,8 @@ function App() {
 
     return "";
   }
+
+  const visibleStatuses = STATUSES.filter((status) => status !== "Blocked");
 
   if (loading) {
     return <div className="screen-state">Loading backlog…</div>;
@@ -1837,6 +1865,12 @@ function App() {
                 <span className="meta-label">Open</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status !== "Done").length) ?? 0}
+                </div>
+              </div>
+              <div className="meta-card metric-card metric-card--plain">
+                <span className="meta-label">Blocked</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => item.status === "Blocked").length) ?? 0}
                 </div>
               </div>
               <div className="meta-card metric-card metric-card--plain">
@@ -2420,7 +2454,7 @@ function App() {
                 currentSprintItems.map((item) => (
                   <article
                     key={`sprint-${item.id}`}
-                    className={`story-card sprint-story-card ${item.status === "Done" ? "sprint-story-card--done" : ""}`}
+                    className={`story-card sprint-story-card story-card--current-sprint ${item.status === "Blocked" ? "story-card--blocked" : ""} ${item.status === "Done" ? "story-card--done sprint-story-card--done" : ""}`}
                     draggable
                     onDragStart={() => {
                       setDraggingId(item.id);
@@ -2432,24 +2466,21 @@ function App() {
                     }}
                     onClick={() => openEditor(item)}
                   >
-                    <button
-                      type="button"
-                      className="sprint-card-remove"
-                      aria-label={`Remove ${item.id} from ${currentSprintSelection}`}
-                      title="Remove from current sprint"
-                      disabled={item.status === "Done"}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (item.status === "Done") {
-                          setError("Done stories stay locked to their sprint.");
-                          return;
-                        }
-                        void assignItemToSprint(item, "").catch((caught) => setError((caught as Error).message));
-                      }}
-                    >
-                      {closeIcon()}
-                    </button>
+                    {item.status !== "Done" ? (
+                      <button
+                        type="button"
+                        className="sprint-card-remove"
+                        aria-label={`Remove ${item.id} from ${currentSprintSelection}`}
+                        title="Remove from current sprint"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void assignItemToSprint(item, "").catch((caught) => setError((caught as Error).message));
+                        }}
+                      >
+                        {closeIcon()}
+                      </button>
+                    ) : null}
                     <div className="story-topline">
                       <button type="button" className={`priority-chip quick-edit-trigger ${item.priority.toLowerCase()}`} onClick={(event) => openQuickEditor(item, "priority", event)}>{item.priority}</button>
                       <button type="button" className={`effort-chip quick-edit-trigger effort-${item.effort}`} onClick={(event) => openQuickEditor(item, "effort", event)}>Effort {item.effort}</button>
@@ -2464,7 +2495,14 @@ function App() {
                       <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
                       <button type="button" className="story-pill story-pill--due quick-edit-trigger" onClick={(event) => openQuickEditor(item, "dueDate", event)}>{item.dueDate ? `Due ${formatDueDate(item.dueDate)}` : "Add due"}</button>
                     </div>
-                    <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
+                    <div className="story-card-footer">
+                      <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
+                      <div className="story-card-footer-chips">
+                        {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
+                        {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
+                        {item.status !== "Blocked" && item.status !== "Done" ? <span className="story-planned-chip">Planned</span> : null}
+                      </div>
+                    </div>
                   </article>
                 ))
               )}
@@ -2519,7 +2557,7 @@ function App() {
       </section>
 
       <main className={`board ${expandedLane ? "board--lane-expanded" : ""}`}>
-        {(expandedLane ? [expandedLane] : STATUSES).map((status) => {
+        {(expandedLane ? [expandedLane] : visibleStatuses).map((status) => {
           const epicMap = grouped.get(status) ?? new Map<string, BacklogItem[]>();
           const epicEntries = Array.from(epicMap.entries());
           return (
@@ -2571,7 +2609,11 @@ function App() {
                       className="icon-button lane-add-button"
                       aria-label="Add request to Inbox"
                       title="Add request"
-                      onClick={() => openPaulaPanel()}
+                      onClick={() => {
+                        setInboxIntakeArmed(true);
+                        openPaulaPanel();
+                        setAgentStatus("Inbox intake armed with hidden new-story context.");
+                      }}
                     >
                       {newBacklogIcon()}
                     </button>
@@ -2593,7 +2635,7 @@ function App() {
                       {items.map((item) => (
                         <article
                           key={item.id}
-                          className={`story-card ${item.sprintAssigned === currentSprintSelection ? "story-card--current-sprint" : ""}`}
+                          className={`story-card ${item.status === "Blocked" ? "story-card--blocked" : ""} ${item.status === "Done" ? "story-card--done" : ""} ${item.sprintAssigned === currentSprintSelection ? "story-card--current-sprint" : ""}`}
                           draggable
                           onDragStart={() => {
                             setDraggingId(item.id);
@@ -2622,7 +2664,14 @@ function App() {
                             <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
                             <button type="button" className="story-pill story-pill--due quick-edit-trigger" onClick={(event) => openQuickEditor(item, "dueDate", event)}>{item.dueDate ? `Due ${formatDueDate(item.dueDate)}` : "Add due"}</button>
                           </div>
-                          <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
+                          <div className="story-card-footer">
+                            <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
+                            <div className="story-card-footer-chips">
+                              {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
+                              {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
+                              {item.status !== "Blocked" && item.status !== "Done" && item.sprintAssigned.trim() ? <span className="story-planned-chip">Planned</span> : null}
+                            </div>
+                          </div>
                         </article>
                       ))}
                     </div>
@@ -2996,6 +3045,25 @@ function App() {
                 onChange={(event) => setEditor({ ...editor, links: event.target.value })}
               />
             </label>
+            {(() => {
+              const { git, pr } = parseTraceabilityLinks(editor.links);
+              if (!git && !pr) return null;
+
+              return (
+                <div className="traceability-preview">
+                  {git ? (
+                    <a href={git} target="_blank" rel="noreferrer">
+                      Git link
+                    </a>
+                  ) : null}
+                  {pr ? (
+                    <a href={pr} target="_blank" rel="noreferrer">
+                      PR link
+                    </a>
+                  ) : null}
+                </div>
+              );
+            })()}
             <label>
               Implementation notes
               <textarea
@@ -3115,8 +3183,10 @@ function App() {
               agentCommand={appConfig?.agentCommand}
               configVersion={agentConfigVersion}
               filterContext={deferredAgentContext}
+              intakeContext={inboxIntakeArmed ? inboxStoryContext : undefined}
               onStatusChange={setAgentStatus}
               onSessionPathChange={setAgentSessionBacklogPath}
+              onIntakeContextConsumed={() => setInboxIntakeArmed(false)}
             />
           ) : (
             <div className="agent-surface">
@@ -3147,6 +3217,7 @@ function App() {
         onClick={() => {
           if (showPaulaPanel) {
             setShowPaulaPanel(false);
+            setInboxIntakeArmed(false);
             return;
           }
           openPaulaPanel();

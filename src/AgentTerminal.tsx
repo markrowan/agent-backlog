@@ -7,8 +7,10 @@ interface AgentTerminalProps {
   backlogPath?: string;
   configVersion?: number;
   filterContext?: string;
+  intakeContext?: string;
   onStatusChange?: (status: string | null) => void;
   onSessionPathChange?: (path: string | null) => void;
+  onIntakeContextConsumed?: () => void;
 }
 
 type AgentTab = "chat" | "terminal";
@@ -105,7 +107,7 @@ function shouldShowTerminal(line: string) {
   );
 }
 
-export default function AgentTerminal({ agentCommand, backlogPath, configVersion, filterContext, onStatusChange, onSessionPathChange }: AgentTerminalProps) {
+export default function AgentTerminal({ agentCommand, backlogPath, configVersion, filterContext, intakeContext, onStatusChange, onSessionPathChange, onIntakeContextConsumed }: AgentTerminalProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -120,6 +122,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   const authSwitchRef = useRef(false);
   const lastFilterContextRef = useRef<string | null>(null);
   const pendingFilterContextRef = useRef<string | null>(null);
+  const pendingIntakeContextRef = useRef<string | null>(null);
   const pendingUserEchoesRef = useRef<string[]>([]);
   const outboundQueueRef = useRef<string[]>([]);
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
@@ -305,21 +308,29 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     }
 
     const deferredContext = pendingFilterContextRef.current?.trim();
-    const submittedMessage = deferredContext
-      ? `${deferredContext}\n\nUser request: ${message}`
-      : message;
+    const intakeContextText = pendingIntakeContextRef.current?.trim();
+    const submittedMessage = [intakeContextText, deferredContext, `User request: ${message}`].filter(Boolean).join("\n\n") || message;
 
     flushAssistantBuffer();
     appendMessage("user", message);
     pendingUserEchoesRef.current.push(message);
     pendingUserEchoesRef.current.push(`User request: ${message}`);
     pendingUserEchoesRef.current.push(submittedMessage);
+    if (intakeContextText) {
+      pendingUserEchoesRef.current.push(intakeContextText);
+      pendingUserEchoesRef.current.push(`${intakeContextText}\n\nUser request: ${message}`);
+    }
     if (deferredContext) {
       pendingUserEchoesRef.current.push(deferredContext);
       pendingUserEchoesRef.current.push(`${deferredContext}\n\nUser request: ${message}`);
     }
     submitInput(submittedMessage);
     pendingFilterContextRef.current = null;
+    pendingIntakeContextRef.current = null;
+    if (intakeContextText) {
+      onStatusChange?.("Inbox intake sent with hidden new-story context.");
+      onIntakeContextConsumed?.();
+    }
     setDraft("");
   }
 
@@ -378,6 +389,10 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       pendingFilterContextRef.current = nextContext;
     }
   }, [backlogPath, filterContext]);
+
+  useEffect(() => {
+    pendingIntakeContextRef.current = intakeContext?.trim() || null;
+  }, [intakeContext]);
 
   useEffect(() => {
     if (!hostRef.current) return;

@@ -3,6 +3,7 @@ export const STATUSES = [
   "Grooming",
   "Ready",
   "In Progress",
+  "Blocked",
   "Testing",
   "Review",
   "Done",
@@ -21,6 +22,7 @@ export interface BacklogItem {
   id: string;
   title: string;
   status: Status;
+  lane: Status;
   epic: string;
   owner: string;
   requester: string;

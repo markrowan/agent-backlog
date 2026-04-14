@@ -442,6 +442,13 @@ function normalizeItem(payload: Partial<BacklogItem>, existingIds: string[]): Ba
     ? (payload.status as BacklogItem["status"])
     : "Inbox";
 
+  const lane =
+    STATUSES.includes(payload.lane as BacklogItem["lane"]) && payload.lane !== "Blocked"
+      ? (payload.lane as BacklogItem["lane"])
+      : status === "Blocked"
+        ? "In Progress"
+        : status;
+
   const safeId = payload.id && !existingIds.includes(payload.id) ? payload.id : "";
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
@@ -450,6 +457,7 @@ function normalizeItem(payload: Partial<BacklogItem>, existingIds: string[]): Ba
     id: safeId,
     title: payload.title?.trim() ?? "Untitled story",
     status,
+    lane,
     epic: payload.epic?.trim() || "Unassigned",
     owner: payload.owner?.trim() || "Paula Product",
     requester: payload.requester?.trim() || "",

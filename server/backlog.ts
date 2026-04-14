@@ -127,6 +127,10 @@ function toItem(blockLines: string[], epic: string): BacklogItem | null {
     id: heading[1],
     title: heading[2].trim(),
     status: safeStatus(fields.get("Status") ?? "Inbox"),
+    lane:
+      safeStatus(fields.get("Status") ?? "Inbox") === "Blocked"
+        ? "In Progress"
+        : safeStatus(fields.get("Status") ?? "Inbox"),
     epic,
     owner: fields.get("Owner") ?? "Paula Product",
     requester: fields.get("Requester") ?? "",
@@ -274,8 +278,9 @@ function formatItem(item: BacklogItem): string {
 }
 
 export function serializeBacklog(document: BacklogDocument): string {
-  const sections = STATUSES.map((status) => {
-    const items = document.items.filter((item) => item.status === status);
+  const laneStatuses = STATUSES.filter((status) => status !== "Blocked");
+  const sections = laneStatuses.map((status) => {
+    const items = document.items.filter((item) => (item.lane ?? item.status) === status);
     const epicMap = new Map<string, BacklogItem[]>();
 
     for (const item of items) {
