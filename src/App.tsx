@@ -41,7 +41,7 @@ const EMPTY_ITEM: BacklogItem = {
 const DEFAULT_EDITOR_WIDTH = 820;
 const DEFAULT_EDITOR_HEIGHT = 812;
 const DEFAULT_EDITOR_POSITION = { x: 120, y: 140 };
-const DEFAULT_PAULA_PANEL_SIZE = { width: 540, height: 420 };
+const DEFAULT_PAULA_PANEL_SIZE = { width: 540, height: 840 };
 const EXPANDED_PAULA_PANEL_RATIO = { width: 2 / 3, height: 2 / 3 };
 const DEFAULT_SORT_ORDER = ["epic", "priority", "effort", "status", "owner", "due", "lastUpdated"] as const;
 type SortKey = (typeof DEFAULT_SORT_ORDER)[number];
@@ -183,6 +183,7 @@ interface ConfigPopoverState {
 
 interface SavedLayout {
   currentSprintTarget: string | null;
+  recentBacklogs: RecentBacklog[];
   selectedEpic: string;
   selectedOwner: string;
   selectedSprint: string;
@@ -312,8 +313,8 @@ function clampPaulaPanelPosition(position: { x: number; y: number }, expanded: b
 
 function defaultPaulaPanelPosition(expanded = false) {
   const size = paulaPanelSize(expanded);
-  const x = Math.max(16, window.innerWidth - size.width - 28);
-  const y = Math.max(16, window.innerHeight - size.height - 172);
+  const x = Math.max(16, window.innerWidth - size.width - 24);
+  const y = Math.max(16, window.innerHeight - size.height - 96);
   return { x, y };
 }
 
@@ -572,7 +573,7 @@ function App() {
   const [autoSprintScope, setAutoSprintScope] = useState<"filtered" | "all">("filtered");
   const [autoSprintProposal, setAutoSprintProposal] = useState<null | { selected: string[]; excluded: Array<{ id: string; reason: string }>; used: number; cap: number; sprint: string }>(null);
   const [autoSprintTaskStatus, setAutoSprintTaskStatus] = useState<AutoSprintTaskStatus | null>(null);
-  const [autoSprintDotCount, setAutoSprintDotCount] = useState(0);
+  const [isAutoGroomStarting, setIsAutoGroomStarting] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortKey[]>([...DEFAULT_SORT_ORDER]);
   const [sortDirections, setSortDirections] = useState<Record<SortKey, SortDirection>>({ ...DEFAULT_SORT_DIRECTIONS });
   const [draggingSortKey, setDraggingSortKey] = useState<SortKey | null>(null);
@@ -603,6 +604,7 @@ function App() {
   const [showUnsavedChangesNotice, setShowUnsavedChangesNotice] = useState(false);
   const [showPaulaPanel, setShowPaulaPanel] = useState(false);
   const [inboxIntakeArmed, setInboxIntakeArmed] = useState(false);
+  const [blockedIntakeContext, setBlockedIntakeContext] = useState<string | undefined>(undefined);
   const [paulaPanelExpanded, setPaulaPanelExpanded] = useState(false);
   const [paulaPanelPosition, setPaulaPanelPosition] = useState(defaultPaulaPanelPosition);
   const paulaCompactPositionRef = useRef(defaultPaulaPanelPosition(false));
@@ -615,6 +617,7 @@ function App() {
   const paulaDragOffsetRef = useRef({ x: 0, y: 0 });
   const draggingPaulaRef = useRef(false);
   const savedLayoutAppliedForPathRef = useRef<string | null>(null);
+  const layoutAutosaveReadyForPathRef = useRef<string | null>(null);
 
   async function loadConfig() {
     const response = await fetch("/api/config");
@@ -669,18 +672,27 @@ function App() {
       if (!unloadResponse.ok) {
         throw new Error(unloadPayload?.message ?? "Failed to unload backlog.");
       }
-      closeEditorImmediate();
-      setQuickEdit(null);
-      setShowPaulaPanel(false);
-      setData(null);
-      setTitleDraft("");
-      latestVersionRef.current = null;
-      setAgentStatus(null);
-      setAgentSessionBacklogPath(null);
-      setError(null);
+      clearBacklogSelection({ clearError: true });
     }
 
     return config.recentBacklogs ?? [];
+  }
+
+  function clearBacklogSelection(options?: { clearError?: boolean }) {
+    closeEditorImmediate();
+    setQuickEdit(null);
+    setShowPaulaPanel(false);
+    setMissingBacklogNotice(null);
+    setData(null);
+    setTitleDraft("");
+    latestVersionRef.current = null;
+    setAgentStatus(null);
+    setAgentSessionBacklogPath(null);
+    setInboxIntakeArmed(false);
+    setBlockedIntakeContext(undefined);
+    if (options?.clearError) {
+      setError(null);
+    }
   }
 
   async function saveAgentCommandConfig(nextCommand: string) {
@@ -716,7 +728,8 @@ function App() {
     if (!data?.path) return;
 
     const layout: SavedLayout = {
-      currentSprintTarget,
+      currentSprintTarget: currentSprintSelection,
+      recentBacklogs,
       selectedEpic,
       selectedOwner,
       selectedSprint,
@@ -727,6 +740,14 @@ function App() {
     };
 
     localStorage.setItem(savedLayoutStorageKey(data.path), JSON.stringify(layout));
+  }
+
+  function clearFilters() {
+    setSelectedEpic("All epics");
+    setSelectedOwner("All owners");
+    setSelectedSprint(ALL_SPRINTS);
+    setSelectedStatus(ALL_STATUSES);
+    setTextFilter("");
   }
 
   function applySavedLayout(path: string) {
@@ -743,6 +764,9 @@ function App() {
       }
       if (typeof parsed.currentSprintTarget === "string" || parsed.currentSprintTarget === null) {
         setCurrentSprintTarget(parsed.currentSprintTarget ?? null);
+      }
+      if (Array.isArray(parsed.recentBacklogs)) {
+        setRecentBacklogs(parsed.recentBacklogs.filter((entry): entry is RecentBacklog => Boolean(entry && typeof entry.path === "string" && typeof entry.displayName === "string")));
       }
       if (typeof parsed.selectedEpic === "string") setSelectedEpic(parsed.selectedEpic);
       if (typeof parsed.selectedOwner === "string") setSelectedOwner(parsed.selectedOwner);
@@ -812,6 +836,7 @@ function App() {
     if (savedLayoutAppliedForPathRef.current === data.path) return;
     savedLayoutAppliedForPathRef.current = data.path;
     applySavedLayout(data.path);
+    layoutAutosaveReadyForPathRef.current = null;
   }, [data?.path]);
 
   useEffect(() => {
@@ -899,6 +924,26 @@ function App() {
 
     return sorted[0] ?? "Sprint 1";
   }, [currentSprintTarget, customSprintOptions, data]);
+
+  useEffect(() => {
+    if (!data?.path) return;
+    if (savedLayoutAppliedForPathRef.current !== data.path) return;
+    if (layoutAutosaveReadyForPathRef.current !== data.path) {
+      layoutAutosaveReadyForPathRef.current = data.path;
+      return;
+    }
+    saveCurrentLayout();
+  }, [
+    currentSprintSelection,
+    data?.path,
+    selectedEpic,
+    selectedOwner,
+    selectedSprint,
+    selectedStatus,
+    sortDirections,
+    sortOrder,
+    textFilter,
+  ]);
 
   const grouped = useMemo(() => {
     if (!data) return new Map<Status, Map<string, BacklogItem[]>>();
@@ -1093,10 +1138,8 @@ function App() {
   const currentSprintItems = useMemo(() => {
     if (!data) return [];
     if (!currentSprintSelection.trim()) return [];
-    return data.document.items
-      .filter((item) => item.sprintAssigned === currentSprintSelection)
-      .filter((item) => itemMatchesTextFilter(item, textFilter));
-  }, [currentSprintSelection, data, textFilter]);
+    return data.document.items.filter((item) => item.sprintAssigned === currentSprintSelection);
+  }, [currentSprintSelection, data]);
 
   const autoSprintSelectedItems = useMemo(() => {
     if (!data || !autoSprintProposal) return [] as BacklogItem[];
@@ -1129,19 +1172,6 @@ function App() {
     setCurrentSprintTarget(previousSprint);
     setCustomSprintOptions((current) => (current.includes(previousSprint) ? current : [...current, previousSprint]));
   }, [currentSprintItems.length, currentSprintSelection, data]);
-
-  useEffect(() => {
-    if (!isAutoSprintRunning) {
-      setAutoSprintDotCount(0);
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      setAutoSprintDotCount((current) => (current + 1) % 4);
-    }, 420);
-
-    return () => window.clearInterval(timer);
-  }, [isAutoSprintRunning]);
 
   useEffect(() => {
     if (!isAutoSprintRunning) {
@@ -1279,6 +1309,9 @@ function App() {
     const updated = (await response.json()) as BacklogResponse;
     setData({ ...data, version: updated.version, document: updated.document });
     latestVersionRef.current = updated.version;
+    if (item.status === "Blocked") {
+      openBlockedReasonPrompt(item);
+    }
     closeEditorImmediate();
     setError(null);
   }
@@ -1350,26 +1383,52 @@ function App() {
       return;
     }
 
-    openPaulaPanel();
-    setAgentStatus(`Opening Paula chat for ${currentSprintSelection}...`);
-    const response = await fetch("/api/agent/context", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        selectedSprint: currentSprintSelection,
-        selectedEpic,
-        selectedOwner,
-        textFilter,
-      }),
-    });
+    setIsAutoGroomStarting(true);
+    try {
+      openPaulaPanel();
+      setAgentStatus(`Opening Paula chat for ${currentSprintSelection}...`);
 
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    if (!response.ok) {
-      throw new Error(payload?.message ?? "Failed to start Auto Groom");
+      const contextResponse = await fetch("/api/agent/context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedSprint: currentSprintSelection,
+          selectedEpic,
+          selectedOwner,
+          textFilter,
+        }),
+      });
+
+      const contextPayload = (await contextResponse.json().catch(() => null)) as { message?: string } | null;
+      if (!contextResponse.ok) {
+        throw new Error(contextPayload?.message ?? "Failed to start Auto Groom");
+      }
+
+      const launchInstruction = [
+        `Auto Groom current sprint ${currentSprintSelection}.`,
+        "Keep this sprint context in view while grooming.",
+        selectedEpic !== "All epics" ? `Focus on epic ${selectedEpic}.` : null,
+        selectedOwner !== "All owners" ? `Filter owner ${selectedOwner}.` : null,
+        textFilter ? `Respect text filter \"${textFilter}\".` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const launchResponse = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction: launchInstruction }),
+      });
+
+      const launchPayload = (await launchResponse.json().catch(() => null)) as { message?: string } | null;
+      if (!launchResponse.ok) {
+        throw new Error(launchPayload?.message ?? "Failed to send Auto Groom launch intent");
+      }
+
+      setAgentStatus(contextPayload?.message ?? launchPayload?.message ?? `Auto Groom started for ${currentSprintSelection}.`);
+      setError(null);
+    } finally {
+      setIsAutoGroomStarting(false);
     }
-
-    setAgentStatus(payload?.message ?? `Auto Groom started for ${currentSprintSelection}.`);
-    setError(null);
   }
 
   async function clearSprintAssignments(sprint: string) {
@@ -1881,6 +1940,34 @@ function App() {
     setShowPaulaPanel(true);
   }
 
+  function openBlockedReasonPrompt(item: BacklogItem) {
+    setBlockedIntakeContext(`Hidden intake context: the user marked BACKLOG-${item.id} as blocked. Ask what is blocking ${item.id} (${item.title}). Keep the response lightweight and capture the blocker reason in the normal Paula chat flow.`);
+    openPaulaPanel();
+  }
+
+  function applyHeaderPreset(kind: "open" | "blocked" | "done" | "epics" | "unassigned") {
+    if (kind === "open") {
+      setSelectedStatus(ALL_STATUSES);
+      setSelectedSprint(ALL_SPRINTS);
+      return;
+    }
+    if (kind === "blocked") {
+      setSelectedStatus("Blocked");
+      return;
+    }
+    if (kind === "done") {
+      setSelectedStatus("Done");
+      return;
+    }
+    if (kind === "epics") {
+      setSelectedEpic("All epics");
+      setExpandedLane(null);
+      return;
+    }
+    setSelectedSprint(UNASSIGNED_SPRINT);
+    setSelectedStatus(ALL_STATUSES);
+  }
+
   function togglePaulaPanelExpanded() {
     setPaulaPanelExpanded((current) => {
       const nextExpanded = !current;
@@ -1958,7 +2045,22 @@ function App() {
     return (
       <div className="screen-state">
         <p>{error}</p>
-        <button onClick={() => void loadBacklog()}>Retry</button>
+        <div className="notice-actions">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => void loadBacklog()}
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => clearBacklogSelection({ clearError: true })}
+          >
+            Back to home
+          </button>
+        </div>
       </div>
     );
   }
@@ -2040,30 +2142,36 @@ function App() {
               ))}
             </div>
             <div className="metrics-row hero-metrics-row">
-              <div className="meta-card metric-card metric-card--plain">
+              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("open")}>
                 <span className="meta-label">Open</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status !== "Done").length) ?? 0}
                 </div>
-              </div>
-              <div className="meta-card metric-card metric-card--plain">
+              </button>
+              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("unassigned")}>
+                <span className="meta-label">Unassigned</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => !item.sprintAssigned.trim() && item.status !== "Done").length) ?? 0}
+                </div>
+              </button>
+              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("blocked")}>
                 <span className="meta-label">Blocked</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status === "Blocked").length) ?? 0}
                 </div>
-              </div>
-              <div className="meta-card metric-card metric-card--plain">
+              </button>
+              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("done")}>
                 <span className="meta-label">Done</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status === "Done").length) ?? 0}
                 </div>
-              </div>
-              <div className="meta-card metric-card metric-card--plain">
+              </button>
+              <button type="button" className="meta-card metric-card metric-card--plain metric-card--section-break metric-card--button" onClick={() => applyHeaderPreset("epics")}>
                 <span className="meta-label">Epics</span>
                 <div className="metric-value">
                   {new Set(data?.document.items.map((item) => item.epic)).size}
                 </div>
-              </div>
+              </button>
               <div className="hero-toolbar-utility">
                 <button
                   type="button"
@@ -2352,169 +2460,6 @@ function App() {
         </div>
       ) : null}
 
-      <section className="epic-filter-strip">
-        <div className="board-controls">
-          <div className="filter-switchers">
-            <label className="epic-switcher">
-              <span className="meta-label">Epic</span>
-              <div className="filter-select-row">
-                <select
-                  value={selectedEpic}
-                  onChange={(event) => setSelectedEpic(event.target.value)}
-                >
-                  {epicOptions.map((epic) => (
-                    <option key={epic} value={epic}>
-                      {epicOptionLabels.get(epic) ?? epic}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="epic-add-button"
-                  onClick={(event) => openFilterCreator("epic", event)}
-                  aria-label="Create epic filter"
-                >
-                  +
-                </button>
-              </div>
-            </label>
-            <label className="epic-switcher owner-switcher">
-              <span className="meta-label">Owner</span>
-              <div className="filter-select-row">
-                <select
-                  value={selectedOwner}
-                  onChange={(event) => setSelectedOwner(event.target.value)}
-                >
-                  {ownerOptions.map((owner) => (
-                    <option key={owner} value={owner}>
-                      {ownerOptionLabels.get(owner) ?? owner}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="epic-add-button"
-                  onClick={(event) => openFilterCreator("owner", event)}
-                  aria-label="Create owner filter"
-                >
-                  +
-                </button>
-              </div>
-            </label>
-            <label className="epic-switcher status-switcher">
-              <span className="meta-label">Status</span>
-              <div className="filter-select-row">
-                <select
-                  value={selectedStatus}
-                  onChange={(event) => setSelectedStatus(event.target.value)}
-                >
-                  {[ALL_STATUSES, ...STATUSES].map((status) => (
-                    <option key={status} value={status}>
-                      {statusOptionLabels.get(status) ?? status}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </label>
-            <label className="epic-switcher sprint-switcher">
-              <span className="meta-label">Sprint</span>
-              <div className="filter-select-row sprint-select-row">
-                <select
-                  value={selectedSprint}
-                  onChange={(event) => setSelectedSprint(event.target.value)}
-                >
-                  {sprintOptions.map((sprint) => (
-                    <option key={sprint} value={sprint}>
-                      {sprintOptionLabels.get(sprint) ?? sprint}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="epic-add-button"
-                  onClick={(event) => openFilterCreator("sprint", event)}
-                  aria-label="Create sprint"
-                >
-                  +
-                </button>
-              </div>
-            </label>
-            <label className="epic-switcher text-filter-switcher">
-              <span className="meta-label">Text</span>
-              <div className="filter-text-row">
-                <input
-                  type="text"
-                  value={textFilter}
-                  onChange={(event) => setTextFilter(event.target.value)}
-                  placeholder="Filter tickets"
-                  aria-label="Text filter"
-                />
-                <button
-                  type="button"
-                  className="icon-button text-filter-clear"
-                  aria-label="Clear text filter"
-                  title="Clear"
-                  disabled={!textFilter}
-                  onClick={() => setTextFilter("")}
-                >
-                  {closeIcon()}
-                </button>
-              </div>
-            </label>
-          </div>
-
-          <div className="sort-switcher">
-            <span className="meta-label">Sort</span>
-            <div className="sort-pill-row">
-              {sortOrder.map((key) => (
-                <div key={key} className={`sort-pill-group ${sortChipClass(key)}`}>
-                  <button
-                    type="button"
-                    className={`sort-pill sort-pill--${key}`}
-                    draggable
-                    onDragStart={() => setDraggingSortKey(key)}
-                    onDragEnd={() => {
-                      setDraggingSortKey(null);
-                      setDragOverSortKey(null);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      if (draggingSortKey && draggingSortKey !== key) {
-                        setDragOverSortKey(key);
-                      }
-                    }}
-                    onDrop={() => {
-                      if (draggingSortKey && draggingSortKey !== key) {
-                        reorderSortKeys(draggingSortKey, key);
-                      }
-                      setDraggingSortKey(null);
-                      setDragOverSortKey(null);
-                    }}
-                    title="Drag to reorder sort priority"
-                  >
-                    <span className="sort-pill-handle">::</span>
-                    {SORT_LABELS[key]}
-                  </button>
-                  <button
-                    type="button"
-                    className={`sort-direction-button sort-direction-button--${key}`}
-                    onClick={() => toggleSortDirection(key)}
-                    aria-label={`Sort ${SORT_LABELS[key]} ${sortDirections[key] === "asc" ? "descending" : "ascending"}`}
-                    title={`Currently ${sortDirections[key] === "asc" ? "ascending" : "descending"}`}
-                  >
-                    <span aria-hidden="true">{sortDirections[key] === "asc" ? "↑" : "↓"}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button type="button" className="ghost-button save-layout-button" onClick={saveCurrentLayout} disabled={!data?.path}>
-            Save layout
-          </button>
-        </div>
-      </section>
-
       <section className="current-sprint-section">
         <div
           className="current-sprint-panel"
@@ -2573,6 +2518,18 @@ function App() {
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      className="epic-add-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openFilterCreator("sprint", event);
+                      }}
+                      aria-label="Create sprint"
+                      title="Create sprint"
+                    >
+                      +
+                    </button>
                   </span>
                 ) : (
                   <span className="current-sprint-name">{currentSprintSelection}</span>
@@ -2733,20 +2690,22 @@ function App() {
               <div className="current-sprint-actions-row">
                 <button
                   type="button"
-                  className="primary-button auto-sprint-button"
+                  className={`primary-button auto-sprint-button ${isAutoSprintRunning ? "is-running" : ""}`}
                   disabled={!data || isAutoSprintRunning}
                   onClick={() => void runAutoSprint().catch((caught) => setError((caught as Error).message))}
                 >
-                  {`Auto Plan${".".repeat(autoSprintDotCount)}`}
+                  {isAutoSprintRunning ? <span className="button-spinner" aria-hidden="true" /> : null}
+                  <span>Auto Plan</span>
                 </button>
                 <button
                   type="button"
-                  className="primary-button auto-groom-button"
-                  disabled={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT}
+                  className={`primary-button auto-groom-button ${isAutoGroomStarting ? "is-running" : ""}`}
+                  disabled={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT || isAutoGroomStarting}
                   title={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? "Select a valid current sprint first." : `Open Paula chat for ${currentSprintSelection}`}
                   onClick={() => void runAutoGroom().catch((caught) => setError((caught as Error).message))}
                 >
-                  Auto Groom
+                  {isAutoGroomStarting ? <span className="button-spinner" aria-hidden="true" /> : null}
+                  <span>Auto Groom</span>
                 </button>
               </div>
               {!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? (
@@ -2756,6 +2715,178 @@ function App() {
               )}
             </aside>
           </div> : null}
+        </div>
+      </section>
+
+      <section className="epic-filter-strip">
+        <div className="board-controls">
+          <div className="board-filters-group">
+            <div className="clear-filters-control">
+              <span className="meta-label clear-filters-control__title" aria-hidden="true">&nbsp;</span>
+              <button
+                type="button"
+                className="clear-filters-button"
+                onClick={clearFilters}
+                disabled={selectedEpic === "All epics" && selectedOwner === "All owners" && selectedSprint === ALL_SPRINTS && selectedStatus === ALL_STATUSES && !textFilter}
+              >
+                <span className="clear-filters-button__icon" aria-hidden="true">{closeIcon()}</span>
+                <span className="clear-filters-button__label">Reset</span>
+              </button>
+            </div>
+            <div className="filter-switchers">
+              <label className="epic-switcher">
+                <span className="meta-label">Epic</span>
+                <div className="filter-select-row">
+                  <select
+                    value={selectedEpic}
+                    onChange={(event) => setSelectedEpic(event.target.value)}
+                  >
+                    {epicOptions.map((epic) => (
+                      <option key={epic} value={epic}>
+                        {epicOptionLabels.get(epic) ?? epic}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="epic-add-button"
+                    onClick={(event) => openFilterCreator("epic", event)}
+                    aria-label="Create epic filter"
+                  >
+                    +
+                  </button>
+                </div>
+              </label>
+              <label className="epic-switcher owner-switcher">
+                <span className="meta-label">Owner</span>
+                <div className="filter-select-row">
+                  <select
+                    value={selectedOwner}
+                    onChange={(event) => setSelectedOwner(event.target.value)}
+                  >
+                    {ownerOptions.map((owner) => (
+                      <option key={owner} value={owner}>
+                        {ownerOptionLabels.get(owner) ?? owner}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="epic-add-button"
+                    onClick={(event) => openFilterCreator("owner", event)}
+                    aria-label="Create owner filter"
+                  >
+                    +
+                  </button>
+                </div>
+              </label>
+              <label className="epic-switcher status-switcher">
+                <span className="meta-label">Status</span>
+                <div className="filter-select-row">
+                  <select
+                    value={selectedStatus}
+                    onChange={(event) => setSelectedStatus(event.target.value)}
+                  >
+                    {[ALL_STATUSES, ...STATUSES].map((status) => (
+                      <option key={status} value={status}>
+                        {statusOptionLabels.get(status) ?? status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+              <label className="epic-switcher sprint-switcher">
+                <span className="meta-label">Sprint</span>
+                <div className="filter-select-row sprint-select-row">
+                  <select
+                    value={selectedSprint}
+                    onChange={(event) => setSelectedSprint(event.target.value)}
+                  >
+                    {sprintOptions.map((sprint) => (
+                      <option key={sprint} value={sprint}>
+                        {sprintOptionLabels.get(sprint) ?? sprint}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="epic-add-button"
+                    onClick={(event) => openFilterCreator("sprint", event)}
+                    aria-label="Create sprint"
+                  >
+                    +
+                  </button>
+                </div>
+              </label>
+              <label className="epic-switcher text-filter-switcher">
+                <span className="meta-label">Text</span>
+                <div className="filter-text-row">
+                  <input
+                    type="text"
+                    value={textFilter}
+                    onChange={(event) => setTextFilter(event.target.value)}
+                    placeholder="Filter tickets"
+                    aria-label="Text filter"
+                  />
+                  <button
+                    type="button"
+                    className="icon-button text-filter-clear"
+                    aria-label="Clear text filter"
+                    title="Clear"
+                    disabled={!textFilter}
+                    onClick={() => setTextFilter("")}
+                  >
+                    {closeIcon()}
+                  </button>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div className="sort-switcher">
+            <span className="meta-label">Sort</span>
+            <div className="sort-pill-row">
+              {sortOrder.map((key) => (
+                <div key={key} className={`sort-pill-group ${sortChipClass(key)}`}>
+                  <button
+                    type="button"
+                    className={`sort-pill sort-pill--${key}`}
+                    draggable
+                    onDragStart={() => setDraggingSortKey(key)}
+                    onDragEnd={() => {
+                      setDraggingSortKey(null);
+                      setDragOverSortKey(null);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (draggingSortKey && draggingSortKey !== key) {
+                        setDragOverSortKey(key);
+                      }
+                    }}
+                    onDrop={() => {
+                      if (draggingSortKey && draggingSortKey !== key) {
+                        reorderSortKeys(draggingSortKey, key);
+                      }
+                      setDraggingSortKey(null);
+                      setDragOverSortKey(null);
+                    }}
+                    title="Drag to reorder sort priority"
+                  >
+                    <span className="sort-pill-handle">::</span>
+                    {SORT_LABELS[key]}
+                  </button>
+                  <button
+                    type="button"
+                    className={`sort-direction-button sort-direction-button--${key}`}
+                    onClick={() => toggleSortDirection(key)}
+                    aria-label={`Sort ${SORT_LABELS[key]} ${sortDirections[key] === "asc" ? "descending" : "ascending"}`}
+                    title={`Currently ${sortDirections[key] === "asc" ? "ascending" : "descending"}`}
+                  >
+                    <span aria-hidden="true">{sortDirections[key] === "asc" ? "▴" : "▾"}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -3310,6 +3441,13 @@ function App() {
               </button>
               <button
                 type="button"
+                className="ghost-button"
+                onClick={() => clearBacklogSelection({ clearError: true })}
+              >
+                Back to home
+              </button>
+              <button
+                type="button"
                 className="primary-button"
                 onClick={() => {
                   void removeRecentBacklogConfig(missingBacklogNotice.path)
@@ -3378,10 +3516,13 @@ function App() {
               agentCommand={appConfig?.agentCommand}
               configVersion={agentConfigVersion}
               filterContext={deferredAgentContext}
-              intakeContext={inboxIntakeArmed ? inboxStoryContext : undefined}
+              intakeContext={blockedIntakeContext ?? (inboxIntakeArmed ? inboxStoryContext : undefined)}
               onStatusChange={setAgentStatus}
               onSessionPathChange={setAgentSessionBacklogPath}
-              onIntakeContextConsumed={() => setInboxIntakeArmed(false)}
+              onIntakeContextConsumed={() => {
+                setInboxIntakeArmed(false);
+                setBlockedIntakeContext(undefined);
+              }}
             />
           ) : (
             <div className="agent-surface">
@@ -3396,12 +3537,6 @@ function App() {
               </div>
             </div>
           )}
-          {agentStatus ? (
-            <div className={`agent-status ${isAgentBacklogMismatch ? "is-mismatch" : ""}`}>
-              {isAgentBacklogMismatch ? <span className="agent-status-alert" aria-hidden="true">!</span> : null}
-              <span>{agentStatus}</span>
-            </div>
-          ) : null}
         </div>
         );
       })() : null}

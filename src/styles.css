@@ -306,21 +306,68 @@ button {
 
 .agent-chat-compose {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
-  align-items: end;
+  align-items: stretch;
+}
+
+.agent-command-queue {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.agent-command-queue__label {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agent-command-pill {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 60%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
+}
+
+.agent-command-pill span {
+  color: color-mix(in srgb, var(--text) 76%, white);
+  opacity: 0.9;
+}
+
+.agent-command-pill button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: white;
 }
 
 .agent-chat-compose textarea {
-  min-height: 64px;
-  max-height: 160px;
+  min-height: 108px;
+  max-height: 204px;
   resize: vertical;
+}
+
+.agent-chat-action-stack {
+  display: grid;
+  gap: 10px;
 }
 
 .agent-chat-actions {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .secondary-button {
@@ -509,6 +556,7 @@ button {
 .hero-toolbar-utility {
   display: inline-flex;
   align-items: center;
+  gap: 10px;
   margin-left: 4px;
   padding-left: 14px;
   border-left: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
@@ -555,6 +603,12 @@ button {
 
 .metric-card--plain .metric-value {
   font-size: clamp(1.25rem, 1.8vw, 1.6rem);
+}
+
+.metric-card--section-break {
+  margin-left: 8px;
+  padding-left: 18px;
+  border-left: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
 }
 
 .metric-card--plain.is-over-capacity .meta-label {
@@ -760,6 +814,14 @@ button {
   flex-wrap: wrap;
 }
 
+.board-filters-group {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex: 1 1 900px;
+  min-width: min(100%, 720px);
+}
+
 .epic-switcher {
   display: inline-grid;
   gap: 8px;
@@ -777,6 +839,8 @@ button {
     minmax(240px, 1fr);
   gap: 18px;
   align-items: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .filter-switchers .epic-switcher {
@@ -808,9 +872,30 @@ button {
   align-items: center;
 }
 
+.board-filters-group .meta-label,
+.sort-switcher .meta-label {
+  font-size: 0.78rem;
+}
+
+.filter-switchers select,
+.filter-switchers input {
+  min-height: 38px;
+  padding: 8px 11px;
+  border-radius: 13px;
+  font-size: 0.92rem;
+}
+
+.board-filters-group .epic-add-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  font-size: 1.1rem;
+}
+
 .text-filter-clear {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
 }
 
@@ -818,17 +903,63 @@ button {
   display: grid;
   gap: 8px;
   align-self: flex-start;
+  flex: 0 0 auto;
+  min-width: max-content;
 }
 
-.save-layout-button {
+.clear-filters-control {
+  display: grid;
+  gap: 8px;
   align-self: flex-start;
-  margin-top: 28px;
+}
+
+.clear-filters-control__title {
+  visibility: hidden;
+}
+
+.clear-filters-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.96);
+  color: #b91c1c;
+  font-size: 0.92rem;
+  transition: transform 160ms ease, background 160ms ease, opacity 160ms ease;
+}
+
+.clear-filters-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
+.clear-filters-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.clear-filters-button__label {
+  line-height: 1;
+}
+
+.clear-filters-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(254, 226, 226, 0.98);
+}
+
+.clear-filters-button:disabled {
+  opacity: 0.45;
 }
 
 .sort-pill-row {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .sort-pill-group {
@@ -841,15 +972,16 @@ button {
 .sort-pill {
   position: relative;
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 11px;
   border-radius: 999px 0 0 999px;
   border: 1px solid var(--line-strong);
   background: color-mix(in srgb, white 76%, var(--panel-tint));
   color: var(--text);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+  font-size: 0.92rem;
 }
 
 .sort-pill--epic {
@@ -922,6 +1054,7 @@ button {
   color: var(--muted);
   letter-spacing: -0.08em;
   font-weight: 700;
+  font-size: 0.86rem;
 }
 
 
@@ -929,8 +1062,8 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 42px;
-  padding: 0 12px;
+  min-width: 36px;
+  padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-left: 0;
   border-radius: 0 999px 999px 0;
@@ -947,7 +1080,7 @@ button {
 }
 
 .sort-direction-button span {
-  font-size: 1rem;
+  font-size: 0.92rem;
   line-height: 1;
 }
 
@@ -1062,8 +1195,33 @@ button {
 
 .auto-sprint-button,
 .auto-groom-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.auto-sprint-button.is-running,
+.auto-groom-button.is-running {
+  min-inline-size: 0;
+}
+
+.button-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.34);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  flex-shrink: 0;
+  animation: button-spinner-spin 0.75s linear infinite;
+}
+
+@keyframes button-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .auto-sprint-results {
@@ -2346,8 +2504,19 @@ textarea {
     align-items: stretch;
   }
 
+  .board-filters-group {
+    flex-direction: column;
+    min-width: 0;
+  }
+
   .filter-switchers {
     grid-template-columns: 1fr;
+  }
+
+  .sort-switcher {
+    min-width: 0;
+    width: 100%;
+    overflow-x: auto;
   }
 
   .board {

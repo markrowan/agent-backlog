@@ -47,6 +47,7 @@ function scrollTerminalToBottom(terminal: Terminal) {
 function normalizeChatText(value: string) {
   return stripAnsi(value)
     .replace(/[\u0000\u0007]/g, "")
+    .replace(/␛M/g, "")
     .replace(/[␛␇]/g, "")
     .replace(/[▎▏]/g, "\n")
     .replace(/\n---+\n/g, "\n")
@@ -78,7 +79,9 @@ function sanitizeUserChatMessage(value: string) {
 function stripPromptArtifacts(value: string) {
   return value
     .replace(/[\u0000\u0007]/g, "")
+    .replace(/␛M/g, "")
     .replace(/[␛␇]/g, "")
+    .replace(/\s*[•·]?\s*Working\s*\(\d+s(?:\s*[•·]\s*esc to interrupt)?\)\s*$/i, "")
     .replace(/[▎▏].*$/u, "")
     .replace(/\s*---+\s*$/u, "")
     .replace(/(?:^|\s)›.*$/u, "")
@@ -128,6 +131,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [queuedCommands, setQueuedCommands] = useState<string[]>([]);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [undoHint, setUndoHint] = useState("No reversible Paula backlog edit exists yet.");
@@ -153,8 +157,29 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     }
   }
 
+  function appendPaulaMessageToBuffer(message: string) {
+    if (authSwitchRef.current) {
+      authSwitchRef.current = false;
+      setActiveTab("chat");
+    }
+    setIsAgentTyping(true);
+    assistantBufferRef.current = assistantBufferRef.current
+      ? `${assistantBufferRef.current}\n${message}`
+      : message;
+  }
+
   function flushAssistantBuffer() {
     clearAssistantFlushTimer();
+    const pendingPartial = lineBufferRef.current.trim();
+    if (pendingPartial) {
+      const paulaLineMatch = pendingPartial.match(/^[^A-Za-z0-9`]*?(PAULA>>\s*.*)$/i);
+      const paulaLine = paulaLineMatch?.[1] ?? pendingPartial;
+      const paulaMessage = /^PAULA>>\s*/i.test(paulaLine) ? extractPaulaMessage(paulaLine) : null;
+      if (paulaMessage) {
+        appendPaulaMessageToBuffer(paulaMessage);
+      }
+      lineBufferRef.current = "";
+    }
     const next = assistantBufferRef.current.trim();
     assistantBufferRef.current = "";
     setIsAgentTyping(false);
@@ -177,8 +202,12 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   }
 
   function consumeChatLine(rawLine: string) {
-    const raw = normalizeChatText(rawLine).trim();
+    const normalized = normalizeChatText(rawLine);
+    const raw = normalized.trim();
     if (!raw) {
+      if (assistantBufferRef.current.trim()) {
+        flushAssistantBuffer();
+      }
       return;
     }
 
@@ -194,24 +223,19 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       return;
     }
 
-    if (!/^PAULA>>\s*/i.test(raw)) {
+    const paulaLineMatch = raw.match(/^[^A-Za-z0-9`]*?(PAULA>>\s*.*)$/i);
+    const paulaLine = paulaLineMatch?.[1] ?? raw;
+
+    if (!/^PAULA>>\s*/i.test(paulaLine)) {
       return;
     }
 
-    const paulaMessage = extractPaulaMessage(raw);
+    const paulaMessage = extractPaulaMessage(paulaLine);
     if (!paulaMessage) {
       return;
     }
 
-    if (authSwitchRef.current) {
-      authSwitchRef.current = false;
-      setActiveTab("chat");
-    }
-    setIsAgentTyping(true);
-
-    assistantBufferRef.current = assistantBufferRef.current
-      ? `${assistantBufferRef.current}\n${paulaMessage}`
-      : paulaMessage;
+    appendPaulaMessageToBuffer(paulaMessage);
     scheduleAssistantFlush();
   }
 
@@ -332,6 +356,31 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       onIntakeContextConsumed?.();
     }
     setDraft("");
+  }
+
+  function queueChatCommand() {
+    const command = sanitizeUserChatMessage(draft);
+    if (!command) {
+      return;
+    }
+
+    setQueuedCommands((current) => [...current, command]);
+    setDraft("");
+    onStatusChange?.(`Queued Paula command: ${command}`);
+  }
+
+  function sendQueuedCommand(index: number) {
+    const command = queuedCommands[index];
+    if (!command) {
+      return;
+    }
+
+    flushAssistantBuffer();
+    appendMessage("user", command);
+    pendingUserEchoesRef.current.push(command);
+    submitInput(command);
+    setQueuedCommands((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    onStatusChange?.(`Sent queued Paula command: ${command}`);
   }
 
   useEffect(() => {
@@ -653,20 +702,38 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
                 }
               }}
             />
-            <div className="agent-chat-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={restoreUndo}
-                disabled={!canUndo || undoBusy}
-                title={undoHint}
-                aria-label={undoHint}
-              >
-                {undoBusy ? "Undoing…" : "Undo"}
-              </button>
-              <button type="button" className="primary-button" onClick={sendChatMessage}>
-                Send
-              </button>
+            <div className="agent-chat-action-stack">
+              {queuedCommands.length > 0 ? (
+                <div className="agent-command-queue" aria-label="Queued Paula commands">
+                  <div className="agent-command-queue__label">Queued message</div>
+                  {queuedCommands.map((command, index) => (
+                    <div key={`${command}-${index}`} className="agent-command-pill">
+                      <span>{command}</span>
+                      <button type="button" onClick={() => sendQueuedCommand(index)}>
+                        Send
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="agent-chat-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={restoreUndo}
+                  disabled={!canUndo || undoBusy}
+                  title={undoHint}
+                  aria-label={undoHint}
+                >
+                  {undoBusy ? "Undoing…" : "Undo"}
+                </button>
+                <button type="button" className="secondary-button" onClick={queueChatCommand} disabled={!draft.trim()}>
+                  Queue
+                </button>
+                <button type="button" className="primary-button" onClick={sendChatMessage}>
+                  Send
+                </button>
+              </div>
             </div>
           </div>
         </section>

@@ -225,18 +225,21 @@ function normalizeAgentOutput(value: string) {
 async function completeAutoSprintTask(status: "completed" | "failed", fallbackMessage: string) {
   clearAutoSprintIdleTimer();
   let message = fallbackMessage;
-  if (status === "completed" && autoSprintTask.startedVersion !== null) {
+  let finalStatus = status;
+  if (autoSprintTask.startedVersion !== null) {
     try {
       const backlog = await readBacklogFile();
-      message =
-        backlog.version !== autoSprintTask.startedVersion
-          ? `Auto Sprint finished for ${autoSprintTask.sprint}.`
-          : `Auto Sprint finished for ${autoSprintTask.sprint}, but no backlog changes were detected.`;
+      if (backlog.version !== autoSprintTask.startedVersion) {
+        finalStatus = "completed";
+        message = `Auto Sprint finished for ${autoSprintTask.sprint}.`;
+      } else if (status === "completed") {
+        message = `Auto Sprint finished for ${autoSprintTask.sprint}, but no backlog changes were detected.`;
+      }
     } catch {
       // Keep fallback when backlog read fails during completion.
     }
   }
-  setAutoSprintTask({ message, status });
+  setAutoSprintTask({ message, status: finalStatus });
 }
 
 function scheduleAutoSprintCompletionCheck() {
