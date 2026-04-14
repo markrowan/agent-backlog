@@ -4,6 +4,8 @@ export const STATUSES = [
   "Ready",
   "In Progress",
   "Blocked",
+  "Testing",
+  "Review",
   "Done",
 ] as const;
 
@@ -40,6 +42,12 @@ export interface BacklogItem {
   dependencies: string;
   links: string;
   implementationNotes: string;
+  traceability?: {
+    gitUrl: string;
+    status: "linked" | "pending";
+    source: "branch" | "commit" | "unknown";
+    reference: string;
+  };
 }
 
 export interface BacklogDocument {

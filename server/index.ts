@@ -616,10 +616,20 @@ app.put("/api/backlog/items/:id", async (request, response) => {
       response.status(400).json({ message: "Done stories stay locked to their sprint." });
       return;
     }
+    const nextStatus = STATUSES.includes(payload.item.status as BacklogItem["status"])
+      ? (payload.item.status as BacklogItem["status"])
+      : existingItem.status;
+    const normalizedPayload =
+      nextStatus !== existingItem.status
+        ? {
+            ...payload.item,
+            lane: nextStatus === "Blocked" ? (existingItem.lane ?? existingItem.status) : nextStatus,
+          }
+        : payload.item;
     const items = current.document.items.map((item) =>
       item.id === request.params.id
         ? {
-            ...normalizeItem(payload.item, current.document.items.map((existing) => existing.id)),
+            ...normalizeItem(normalizedPayload, current.document.items.map((existing) => existing.id)),
             id: request.params.id,
             dateAdded: item.dateAdded,
           }

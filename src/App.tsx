@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Download, FolderOpen, Maximize2, Minimize2, PlusSquare, Settings2, Trash2, Undo2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FolderOpen, GitBranch, GitPullRequest, Maximize2, Minimize2, PlusSquare, Settings2, Trash2, Undo2, X } from "lucide-react";
 import AgentTerminal from "./AgentTerminal";
 import {
   BacklogItem,
@@ -99,6 +99,34 @@ const compareSprintLabelsDescending = (left: string, right: string) => {
     if (difference !== 0) return difference;
   }
   return right.localeCompare(left);
+};
+
+const extractLabelNumber = (label: string) => {
+  const match = label.match(/(\d+)(?!.*\d)/);
+  return match ? Number(match[1]) : null;
+};
+
+const sortLabelsByNumericValue = (labels: string[], direction: "asc" | "desc") => {
+  return labels
+    .map((label, index) => ({ label, index, numeric: extractLabelNumber(label) }))
+    .sort((left, right) => {
+      const leftHasNumber = left.numeric !== null;
+      const rightHasNumber = right.numeric !== null;
+
+      if (leftHasNumber && rightHasNumber && left.numeric !== right.numeric) {
+        return direction === "asc" ? left.numeric - right.numeric : right.numeric - left.numeric;
+      }
+
+      if (leftHasNumber !== rightHasNumber) {
+        return leftHasNumber ? -1 : 1;
+      }
+
+      const textCompare = left.label.localeCompare(right.label);
+      if (textCompare !== 0) return textCompare;
+
+      return left.index - right.index;
+    })
+    .map((entry) => entry.label);
 };
 
 interface RecentBacklog {
@@ -383,6 +411,14 @@ function parseTraceabilityLinks(rawLinks: string) {
   return urls;
 }
 
+function getItemTraceabilityUrls(item: BacklogItem) {
+  const parsed = parseTraceabilityLinks(item.links);
+  return {
+    git: item.traceability?.status === "linked" && item.traceability.gitUrl ? item.traceability.gitUrl : parsed.git,
+    pr: parsed.pr,
+  };
+}
+
 function saveIcon() {
   return <Download aria-hidden="true" strokeWidth={1.9} />;
 }
@@ -417,6 +453,65 @@ function minimizeIcon() {
 
 function newBacklogIcon() {
   return <PlusSquare aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function gitBranchIcon() {
+  return <GitBranch aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function pullRequestIcon() {
+  return <GitPullRequest aria-hidden="true" strokeWidth={1.9} />;
+}
+
+function TraceabilityActions({
+  gitUrl,
+  prUrl,
+  className = "",
+  onOpen,
+}: {
+  gitUrl?: string;
+  prUrl?: string;
+  className?: string;
+  onOpen?: () => void;
+}) {
+  if (!gitUrl && !prUrl) return null;
+
+  return (
+    <div className={`traceability-actions ${className}`.trim()}>
+      {gitUrl ? (
+        <a
+          className="traceability-icon-button"
+          href={gitUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open git traceability link"
+          title="Open git link"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen?.();
+          }}
+        >
+          {gitBranchIcon()}
+        </a>
+      ) : null}
+      {prUrl ? (
+        <a
+          className="traceability-icon-button"
+          href={prUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open PR traceability link"
+          title="Open PR link"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen?.();
+          }}
+        >
+          {pullRequestIcon()}
+        </a>
+      ) : null}
+    </div>
+  );
 }
 
 function openBacklogIcon() {
@@ -495,6 +590,8 @@ function App() {
   const [agentConfigVersion, setAgentConfigVersion] = useState(0);
   const [choosingFile, setChoosingFile] = useState(false);
   const [creatingFile, setCreatingFile] = useState(false);
+  const [pendingBacklogSwitchPath, setPendingBacklogSwitchPath] = useState<string | null>(null);
+  const [showProjectSwitchWarning, setShowProjectSwitchWarning] = useState(false);
   const [showEpicCreator, setShowEpicCreator] = useState(false);
   const [newEpicDraft, setNewEpicDraft] = useState("");
   const [customEpicOptions, setCustomEpicOptions] = useState<string[]>([]);
@@ -908,6 +1005,21 @@ function App() {
     return ["All owners", ...Array.from(owners).sort()];
   }, [customOwnerOptions, data]);
 
+  const ownerOptionLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    labels.set("All owners", "All owners");
+
+    for (const owner of ownerOptions) {
+      if (owner === "All owners") continue;
+      const openCount = (data?.document.items ?? []).filter(
+        (item) => (item.owner || "Unassigned") === owner && item.status !== "Done",
+      ).length;
+      labels.set(owner, `${owner} (${openCount})`);
+    }
+
+    return labels;
+  }, [data, ownerOptions]);
+
   const deferredAgentContext = useMemo(() => {
     const scopeParts = [
       selectedEpic && selectedEpic !== "All epics" ? `epic: ${selectedEpic}` : null,
@@ -929,14 +1041,54 @@ function App() {
       }
     }
 
-    return [ALL_SPRINTS, UNASSIGNED_SPRINT, ...Array.from(sprints).sort(compareSprintLabelsDescending)];
+    return [ALL_SPRINTS, UNASSIGNED_SPRINT, ...sortLabelsByNumericValue(Array.from(sprints), "desc")];
   }, [customSprintOptions, data]);
 
-  useEffect(() => {
-    setCurrentSprintTarget(null);
-  }, [data?.path]);
+  const sprintOptionLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    labels.set(ALL_SPRINTS, ALL_SPRINTS);
+    labels.set(UNASSIGNED_SPRINT, `${UNASSIGNED_SPRINT} (${(data?.document.items ?? []).filter((item) => !item.sprintAssigned.trim() && item.status !== "Done").length})`);
+
+    for (const sprint of sprintOptions) {
+      if (sprint === ALL_SPRINTS || sprint === UNASSIGNED_SPRINT) continue;
+      const openCount = (data?.document.items ?? []).filter(
+        (item) => item.sprintAssigned === sprint && item.status !== "Done",
+      ).length;
+      labels.set(sprint, `${sprint} (${openCount})`);
+    }
+
+    return labels;
+  }, [data, sprintOptions]);
+
+  const statusOptionLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    labels.set(ALL_STATUSES, ALL_STATUSES);
+
+    for (const status of STATUSES) {
+      const openCount = (data?.document.items ?? []).filter(
+        (item) => item.status === status && item.status !== "Done",
+      ).length;
+      labels.set(status, `${status} (${openCount})`);
+    }
+
+    return labels;
+  }, [data]);
 
   const availableSprintTargets = useMemo(() => sprintOptions.filter((sprint) => sprint !== ALL_SPRINTS && sprint !== UNASSIGNED_SPRINT), [sprintOptions]);
+
+  useEffect(() => {
+    if (!data) return;
+
+    const sprintValues = availableSprintTargets;
+    if (currentSprintTarget && sprintValues.includes(currentSprintTarget)) {
+      return;
+    }
+
+    const fallbackSprint = sprintValues[0] ?? null;
+    if (currentSprintTarget !== fallbackSprint) {
+      setCurrentSprintTarget(fallbackSprint);
+    }
+  }, [data, availableSprintTargets, currentSprintTarget]);
 
   const currentSprintItems = useMemo(() => {
     if (!data) return [];
@@ -1035,7 +1187,7 @@ function App() {
     for (const item of data?.document.items ?? []) {
       epics.add(item.epic || "Unassigned");
     }
-    return ["All epics", ...Array.from(epics).sort()];
+    return ["All epics", ...sortLabelsByNumericValue(Array.from(epics), "asc")];
   }, [customEpicOptions, data]);
 
   const epicOptionLabels = useMemo(() => {
@@ -1048,7 +1200,7 @@ function App() {
       const itemsForEpic = (data?.document.items ?? []).filter((item) => (item.epic || "Unassigned") === epic);
       const doneCount = itemsForEpic.filter((item) => item.status === "Done").length;
       const openCount = itemsForEpic.length - doneCount;
-      const label = openCount > 0 ? `Open (${openCount})` : `Done (${doneCount})`;
+      const label = openCount > 0 ? `🟠 open (${openCount})` : `✅ done (${openCount})`;
       labels.set(epic, `${label} - ${epic}`);
     }
 
@@ -1066,7 +1218,7 @@ function App() {
       epics.add(editor.epic.trim());
     }
 
-    return Array.from(epics).sort((left, right) => left.localeCompare(right));
+    return sortLabelsByNumericValue(Array.from(epics), "asc");
   }, [data, editor?.epic]);
 
   const nextEpicStub = useMemo(() => {
@@ -1524,8 +1676,22 @@ function App() {
     }
   }
 
-  async function selectBacklogFile(filePath: string) {
+  async function selectBacklogFile(filePath: string, options?: { bypassWarning?: boolean }) {
     setError(null);
+
+    const activePaulaWork = Boolean(
+      !options?.bypassWarning &&
+      data?.path &&
+      agentSessionBacklogPath &&
+      agentSessionBacklogPath === data.path &&
+      filePath !== data.path,
+    );
+
+    if (activePaulaWork) {
+      setPendingBacklogSwitchPath(filePath);
+      setShowProjectSwitchWarning(true);
+      return;
+    }
 
     try {
       const response = await fetch("/api/backlog/select", {
@@ -1558,6 +1724,19 @@ function App() {
     } catch (caught) {
       setError((caught as Error).message);
     }
+  }
+
+  async function continueBacklogSwitch() {
+    const nextPath = pendingBacklogSwitchPath;
+    setShowProjectSwitchWarning(false);
+    setPendingBacklogSwitchPath(null);
+    if (!nextPath) return;
+    await selectBacklogFile(nextPath, { bypassWarning: true });
+  }
+
+  function stayOnCurrentBacklog() {
+    setShowProjectSwitchWarning(false);
+    setPendingBacklogSwitchPath(null);
   }
 
   async function createBacklogFile() {
@@ -1908,6 +2087,29 @@ function App() {
 
       {error ? <div className="banner-error">{error}</div> : null}
 
+      {showProjectSwitchWarning ? (
+        <div className="quick-edit-layer">
+          <button
+            type="button"
+            className="quick-edit-scrim"
+            onClick={stayOnCurrentBacklog}
+            aria-label="Dismiss project switch warning"
+          />
+          <div className="config-popover config-popover--floating" style={{ left: "50%", top: "18%", transform: "translateX(-50%)" }}>
+            <p className="eyebrow">Pause switch</p>
+            <p>Paula is still working on this project. Switching may interrupt that backlog session.</p>
+            <div className="inline-actions">
+              <button type="button" className="secondary-button" onClick={stayOnCurrentBacklog}>
+                Stay here
+              </button>
+              <button type="button" className="primary-button" onClick={() => void continueBacklogSwitch()}>
+                Continue switch
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showConfigPanel ? (
         <div className="quick-edit-layer">
           <button
@@ -2185,7 +2387,7 @@ function App() {
                 >
                   {ownerOptions.map((owner) => (
                     <option key={owner} value={owner}>
-                      {owner}
+                      {ownerOptionLabels.get(owner) ?? owner}
                     </option>
                   ))}
                 </select>
@@ -2208,7 +2410,7 @@ function App() {
                 >
                   {[ALL_STATUSES, ...STATUSES].map((status) => (
                     <option key={status} value={status}>
-                      {status}
+                      {statusOptionLabels.get(status) ?? status}
                     </option>
                   ))}
                 </select>
@@ -2223,7 +2425,7 @@ function App() {
                 >
                   {sprintOptions.map((sprint) => (
                     <option key={sprint} value={sprint}>
-                      {sprint}
+                      {sprintOptionLabels.get(sprint) ?? sprint}
                     </option>
                   ))}
                 </select>
@@ -2498,6 +2700,7 @@ function App() {
                     <div className="story-card-footer">
                       <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
                       <div className="story-card-footer-chips">
+                        {(() => { const traceability = getItemTraceabilityUrls(item); return <TraceabilityActions gitUrl={traceability.git} prUrl={traceability.pr} />; })()}
                         {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
                         {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
                         {item.status !== "Blocked" && item.status !== "Done" ? <span className="story-planned-chip">Planned</span> : null}
@@ -2635,7 +2838,7 @@ function App() {
                       {items.map((item) => (
                         <article
                           key={item.id}
-                          className={`story-card ${item.status === "Blocked" ? "story-card--blocked" : ""} ${item.status === "Done" ? "story-card--done" : ""} ${item.sprintAssigned === currentSprintSelection ? "story-card--current-sprint" : ""}`}
+                          className={`story-card ${item.status === "Blocked" ? "story-card--blocked" : ""} ${item.status === "Done" ? "story-card--done" : ""} ${item.status !== "Blocked" && item.status !== "Done" && item.sprintAssigned.trim() ? "story-card--current-sprint" : ""}`}
                           draggable
                           onDragStart={() => {
                             setDraggingId(item.id);
@@ -2667,6 +2870,7 @@ function App() {
                           <div className="story-card-footer">
                             <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
                             <div className="story-card-footer-chips">
+                              {(() => { const traceability = getItemTraceabilityUrls(item); return <TraceabilityActions gitUrl={traceability.git} prUrl={traceability.pr} />; })()}
                               {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
                               {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
                               {item.status !== "Blocked" && item.status !== "Done" && item.sprintAssigned.trim() ? <span className="story-planned-chip">Planned</span> : null}
@@ -2801,15 +3005,21 @@ function App() {
                     aria-hidden="true"
                   />
                 </div>
-                <input
-                  className="editor-title-input"
-                  value={editor.title}
-                  placeholder="Untitled story"
-                  onChange={(event) => setEditor({ ...editor, title: event.target.value })}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  required
-                  aria-label="Story title"
-                />
+                <div className="editor-title-row">
+                  <input
+                    className="editor-title-input"
+                    value={editor.title}
+                    placeholder="Untitled story"
+                    onChange={(event) => setEditor({ ...editor, title: event.target.value })}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    required
+                    aria-label="Story title"
+                  />
+                  {(() => {
+                    const { git, pr } = getItemTraceabilityUrls(editor);
+                    return <TraceabilityActions gitUrl={git} prUrl={pr} className="editor-traceability-actions" />;
+                  })()}
+                </div>
               </div>
               <div className="editor-actions">
                 <button
@@ -3047,22 +3257,7 @@ function App() {
             </label>
             {(() => {
               const { git, pr } = parseTraceabilityLinks(editor.links);
-              if (!git && !pr) return null;
-
-              return (
-                <div className="traceability-preview">
-                  {git ? (
-                    <a href={git} target="_blank" rel="noreferrer">
-                      Git link
-                    </a>
-                  ) : null}
-                  {pr ? (
-                    <a href={pr} target="_blank" rel="noreferrer">
-                      PR link
-                    </a>
-                  ) : null}
-                </div>
-              );
+              return <TraceabilityActions gitUrl={git} prUrl={pr} className="traceability-preview" />;
             })()}
             <label>
               Implementation notes

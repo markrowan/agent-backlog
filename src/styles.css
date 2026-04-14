@@ -1644,6 +1644,52 @@ button {
   flex-wrap: wrap;
 }
 
+.traceability-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.traceability-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 70%, transparent);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+  flex-shrink: 0;
+}
+
+.traceability-icon-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.traceability-icon-button:hover {
+  color: var(--accent-deep);
+  border-color: var(--line-strong);
+}
+
+.traceability-preview {
+  margin-top: 4px;
+  justify-content: flex-start;
+}
+
+.editor-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.editor-traceability-actions {
+  padding-top: 4px;
+  flex-shrink: 0;
+}
+
 .story-blocked-chip {
   display: inline-flex;
   align-items: center;

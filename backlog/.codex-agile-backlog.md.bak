@@ -62,11 +62,11 @@ Use for completed items with outcome notes.
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T08:50:03.239Z
+- Updated: 2026-04-14T08:53:03.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
-- Sprint Assigned: Sprint 7
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
 - Summary: Keep the board-switching and selector-hygiene request split into focused child stories instead of treating warning, naming, ordering, and invalid-selection recovery as one ticket.
@@ -86,22 +86,144 @@ Use for completed items with outcome notes.
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T08:50:10.350Z
+- Updated: 2026-04-14T09:11:01.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
-- Sprint Assigned: Sprint 7
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
-- Summary: Define and enforce a consistent `Epic N` and `Sprint N` naming rule for board-visible labels.
-- Outcome / user value: Users can scan and compare epics and sprints without mixed naming styles that make selectors feel inconsistent or hard to sort.
-- Scope notes: In scope, defining the canonical numeric label pattern for epics and sprints, deciding where the rule is enforced, and clarifying how non-conforming existing values are handled in the UI and backlog flow. Open question, whether existing non-conforming labels are auto-normalized or blocked for manual correction. Out of scope, broader taxonomy changes beyond the `Epic N` and `Sprint N` pattern.
+- Summary: Keep the numeric-label cleanup split into focused stories for validation rules and handling older non-conforming labels.
+- Outcome / user value: Product and engineering can finish selector naming cleanup without mixing current-entry rules with legacy-label behavior in one ambiguous ticket.
+- Scope notes: In scope, keeping the naming work split between validation for new or edited labels and product handling for existing non-conforming labels. In scope, preserving the canonical `Epic N` and `Sprint N` direction while making the remaining product decisions explicit. Out of scope, treating numeric-label cleanup as one implementation card or changing selector ordering behavior already tracked elsewhere.
 - Acceptance criteria:
-  - [ ] The product rule explicitly states the canonical label pattern for epics shown as `Epic N`.
-  - [ ] The product rule explicitly states the canonical label pattern for sprints shown as `Sprint N`.
-  - [ ] The story defines how the system handles existing labels that do not match the numeric pattern.
-  - [ ] The story defines whether invalid names are prevented at entry time, normalized on save, or shown as validation issues for follow-up handling.
-- Dependencies: epic naming rules, sprint naming rules, selector label rendering, backlog edit flow.
+  - [ ] The naming cleanup is represented as smaller stories with one primary outcome each.
+  - [ ] The child stories clearly separate entry-time validation from legacy-label handling.
+  - [ ] The split makes it clear which decision can move toward implementation first.
+  - [ ] Sprint-ready implementation work can move on the child stories instead of this parent coordination card.
+- Dependencies: BACKLOG-047, BACKLOG-048, epic naming rules, sprint naming rules, selector label rendering, backlog edit flow.
+- Links: current session request
+- Implementation notes: Original product direction preserved: use `Epic N` and `Sprint N` as the canonical labels while splitting validation behavior from the handling of older labels that do not match the rule.
+
+## BACKLOG-048 - Decide how older non-numeric labels are handled
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:14:21.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define how the product treats existing epic and sprint labels that do not already match the numeric naming rule.
+- Outcome / user value: Older boards remain understandable and recoverable instead of becoming inconsistent or blocked after the naming rule is introduced.
+- Scope notes: In scope, deciding whether older non-conforming labels are auto-normalized, left visible with a follow-up warning, or blocked from editing until corrected. In scope, clarifying how legacy labels appear in selectors during the transition. Out of scope, changing the canonical naming rule for new labels.
+- Acceptance criteria:
+  - [ ] The story defines whether existing non-conforming labels are auto-normalized, preserved with warning, or require manual correction.
+  - [ ] The story defines how older non-conforming labels appear in selectors before they are corrected.
+  - [ ] The story defines whether users can continue working on boards that still contain older labels.
+  - [ ] The story defines the minimum follow-up path for correcting legacy labels when correction is required.
+- Dependencies: BACKLOG-047, selector label rendering, legacy board behavior.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+### Epic 7, Mobile access and hosted sprint operations
+
+## BACKLOG-043 - Split mobile and hosted sprint-run work
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:08:47.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Keep the mobile interface and hosted sprint-run request grouped as one epic but split into focused child stories for mobile UX, hosted backlog access, and remote sprint launch.
+- Outcome / user value: Product and engineering can sequence a visible mobile-first planning flow without bundling responsive UI, hosted file access, and remote agent execution into one oversized ticket.
+- Scope notes: In scope, defining the epic shape, separating the work into child stories, and making the dependency order explicit. In scope, treating phone usability, online backlog access, and launching an AgentLab sprint run as distinct outcomes that still support one hosted workflow. Out of scope, carrying this request as one implementation card or assuming infra and UX decisions are already settled.
+- Acceptance criteria:
+  - [ ] The request is represented as smaller stories with one primary user outcome each.
+  - [ ] The split clearly separates mobile usability, hosted backlog access, and remote sprint-launch behavior.
+  - [ ] The child stories make it clear which product decisions block implementation readiness.
+  - [ ] Sprint-ready work can move on child stories instead of this parent coordination card.
+- Dependencies: BACKLOG-044, BACKLOG-045, BACKLOG-046.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: mobile interface, host the markdown backlog and possibly the full interface online, and use that hosted experience to launch an AgentLab instance to run a sprint.
+
+## BACKLOG-044 - Make the board usable on mobile for sprint work
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:08:47.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define a mobile-first board experience that still supports reading, grooming, and launching sprint actions from a phone-sized screen.
+- Outcome / user value: Users can review backlog state and kick off sprint work away from a desktop instead of waiting to return to a larger screen.
+- Scope notes: In scope, the smallest useful phone experience for backlog review and sprint operations, including navigation, lane readability, card actions, and the launch entry point for sprint-running flows. In scope, deciding whether mobile uses the same board layout with responsive changes or a simplified stacked presentation. Out of scope, full parity with every desktop interaction, tablet-specific polish, or visual redesign unrelated to mobile usability.
+- Acceptance criteria:
+  - [ ] The story defines the minimum phone-width workflow that must remain usable end to end.
+  - [ ] The story defines how users navigate lanes, epics, and story details on a mobile screen without relying on hover behavior.
+  - [ ] The story defines which sprint actions must be available on mobile and which desktop-only actions may be deferred.
+  - [ ] The story defines a clear success condition for mobile readability and tap-target usability.
+- Dependencies: mobile navigation pattern, backlog board layout constraints, sprint action entry points.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-045 - Define hosted backlog access for the online board
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:08:47.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define how the markdown backlog file and the board UI are hosted online so the backlog remains the source of truth while being safely accessible over the web.
+- Outcome / user value: Users can open the backlog from anywhere through a stable online interface instead of depending on a local-only setup.
+- Scope notes: In scope, deciding where the markdown source of truth lives when used online, how the hosted UI reads and writes that file safely, and whether users access a hosted board only or a hosted board plus hosted backlog storage. In scope, clarifying required access control, conflict handling, and backup expectations for a web-hosted backlog. Out of scope, picking exact cloud vendors, implementation-level deployment scripts, or changing the markdown schema.
+- Acceptance criteria:
+  - [ ] The story defines the source-of-truth location for the markdown backlog in a hosted setup.
+  - [ ] The story defines how hosted edits avoid silent overwrite when multiple sessions touch the same backlog.
+  - [ ] The story defines the minimum access-control expectation for opening and editing the hosted board.
+  - [ ] The story defines whether the hosted scope includes only the UI, the markdown file, or both.
+- Dependencies: write-safety model, hosted authentication decision, hosted storage decision.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-046 - Launch an AgentLab sprint run from the hosted board
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:08:47.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define the hosted launch flow that turns a selected sprint into an AgentLab run without making users leave the online backlog interface.
+- Outcome / user value: Users can move directly from sprint planning to execution in one place, reducing setup friction and launch mistakes.
+- Scope notes: In scope, the user-facing launch entry point, the minimum run configuration exposed in the hosted UI, and the status feedback users need after starting an AgentLab sprint run. In scope, clarifying whether the launch targets one preconfigured AgentLab environment or a user-selected destination. Out of scope, low-level runtime orchestration details, coding the AgentLab integration, or broad environment-management features unrelated to sprint launch.
+- Acceptance criteria:
+  - [ ] The story defines what sprint context is sent when a hosted user launches an AgentLab run.
+  - [ ] The story defines the minimum configuration fields users must confirm before launch.
+  - [ ] The story defines the visible success, in-progress, and failure states after a hosted launch attempt.
+  - [ ] The story defines whether the launch flow supports one fixed AgentLab target or multiple destinations.
+- Dependencies: BACKLOG-045, AgentLab launch contract, hosted run-status feedback model.
 - Links: current session request
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
@@ -133,92 +255,175 @@ Use for completed items with outcome notes.
 
 ### Epic 4, Ticket traceability
 
-## BACKLOG-019 - Define ticket traceability model without schema changes
+## BACKLOG-019 - Define ticket traceability model and schema path
 - Status: Grooming
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-13
-- Updated: 2026-04-14T08:50:49.576Z
+- Updated: 2026-04-14T08:53:03.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
-- Sprint Assigned: Sprint 7
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
-- Summary: Keep the traceability work split into coherent child stories without changing the fixed markdown backlog schema.
+- Summary: Define the traceability source of truth and decide whether the current backlog schema is sufficient or needs a controlled migration path.
 - Outcome / user value: Product and engineering can plan traceability as a small set of clear outcomes instead of carrying one overloaded parent request into sprint work.
-- Scope notes: In scope, keeping the traceability epic grouped into child stories for source of truth, ticket UI behavior, workflow ownership, and legacy backlog handling. Out of scope, adding new mandatory markdown fields or keeping unresolved parent-level planning work assigned to the active sprint.
+- Scope notes: In scope, keeping the traceability epic grouped into child stories for source of truth, ticket UI behavior, workflow ownership, and legacy backlog handling. In scope, deciding whether traceability should stay fully integration-derived or whether a schema change is justified, plus defining migration expectations for existing templates and backlog files if that schema change is approved. Out of scope, making ad hoc schema edits without a documented migration path or keeping unresolved parent-level planning work assigned to the active sprint.
 - Acceptance criteria:
   - [ ] The traceability work is grouped into smaller stories with one primary outcome each.
   - [ ] The child stories clearly cover source of truth, ticket UI behavior, workflow ownership, and older backlog handling.
   - [ ] The dependency order makes it clear which child stories can move independently to `Ready` and which ones still need product or workflow decisions.
+  - [ ] The story explicitly states whether the existing markdown schema remains sufficient or a schema change is required for traceability.
+  - [ ] If a schema change is required, the story defines a controlled migration expectation for existing templates and backlog files on first load in a later version.
   - [ ] Sprint-ready implementation work is tracked on child stories instead of this parent coordination card.
 - Dependencies: BACKLOG-020, BACKLOG-021, BACKLOG-022, BACKLOG-023.
 - Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
+- Implementation notes: Product direction updated to allow a schema change if traceability cannot be supported cleanly through integration-derived metadata alone, but only with an explicit migration path and prompt guidance for later-version first-load migration.
 
 ## BACKLOG-021 - Show git and PR links on tickets
 - Status: Grooming
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-13
-- Updated: 2026-04-14T08:50:44.305Z
+- Updated: 2026-04-14T09:12:55.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
-- Sprint Assigned: Sprint 7
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Ben
-- Summary: Show each ticket's git link and PR link in the ticket UI when traceability metadata exists.
-- Outcome / user value: Users can jump from a backlog ticket to active implementation work without searching across tools or guessing which branch or PR matches the story.
-- Scope notes: In scope, resolving the git URL and PR URL from integration-derived traceability metadata keyed by `BACKLOG-XXX`, with the git destination taken from the linked branch or commit URL in that metadata and the PR destination taken from the linked pull-request URL in that metadata. In scope, showing the available link when only one exists, showing a calm no-link helper when neither exists, and keeping any existing editor preview as a separate helper rather than replacing it with traceability links. Open question, the ticket-editor helper contract decision still needs to define how the existing helper and the traceability links coexist. Out of scope, editing the markdown schema, requiring manual URL entry on stories, inventing a second source of truth for traceability URLs, or removing the editor preview as part of this ticket.
+- Summary: Keep ticket traceability UI split into smaller stories for git-link visibility and PR-link visibility instead of one combined card.
+- Outcome / user value: Product and engineering can ship the first useful traceability jump point sooner without waiting for both link types and every helper-state rule at once.
+- Scope notes: In scope, separating the ticket-link UI work into focused stories for git links and PR links, while preserving the decision that both rely on integration-derived metadata. In scope, keeping helper-state and editor-preview coexistence explicit on the child stories. Out of scope, carrying both link types as one implementation card.
 - Acceptance criteria:
-  - [ ] A ticket resolves its git URL from the integration-derived branch or commit destination associated with that `BACKLOG-XXX` item.
-  - [ ] A ticket resolves its PR URL from the integration-derived pull-request destination associated with that `BACKLOG-XXX` item.
-  - [ ] If only the git URL exists, the ticket shows the git link and a calm missing-PR helper state.
-  - [ ] If only the PR URL exists, the ticket shows the PR link and a calm missing-git helper state.
-  - [ ] If neither URL exists yet, the ticket presents a clear no-link state instead of empty or confusing UI.
-  - [ ] The links are visibly associated with the ticket they belong to and can be opened directly from the ticket UI.
-  - [ ] Any existing editor preview remains available as a separate helper and is not replaced by the traceability links.
-  - [ ] The ticket remains readable and compact, with traceability links presented as supporting actions rather than replacing core story content.
-- Dependencies: BACKLOG-020, BACKLOG-023, traceability metadata availability, traceability metadata lookup contract, ticket-editor helper contract decision.
+  - [ ] The ticket-link UI work is represented as smaller stories with one primary outcome each.
+  - [ ] The child stories clearly separate git-link visibility from PR-link visibility.
+  - [ ] The split makes it clear which traceability link can ship first.
+  - [ ] Sprint-ready implementation work can move on the child stories instead of this parent coordination card.
+- Dependencies: BACKLOG-051, BACKLOG-052, BACKLOG-020, BACKLOG-023, traceability metadata availability, traceability metadata lookup contract, ticket-editor helper contract decision.
 - Links: current session request
-- Implementation notes: Blocked with no implementation work started and no repo changes yet. Waiting on the traceability metadata needed to resolve ticket-linked destinations and on the ticket-editor helper contract decision before this can return to `Ready`.
+- Implementation notes: Product direction preserved: ticket traceability stays metadata-driven and compact in the UI, but the visible link work is now split so the first useful jump point can land earlier.
 
 ## BACKLOG-022 - Define ownership for keeping traceability current
 - Status: Grooming
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-13
-- Updated: 2026-04-14T08:50:50.895Z
+- Updated: 2026-04-14T09:11:01.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 3
-- Sprint Assigned: Sprint 7
+- Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
-- Summary: Define who keeps each ticket's git link and PR link current and when those updates happen during delivery.
-- Outcome / user value: Traceability stays accurate during normal delivery work instead of becoming a cleanup task after the sprint.
-- Scope notes: In scope, ownership, timing, and minimum expectations for linking tickets to implementation work during active delivery. Out of scope, broader release-process redesign or assuming this cross-team workflow decision is implementation-ready before agreement exists.
+- Summary: Keep traceability workflow ownership split into focused stories for implementation-start linking and pull-request linking policy.
+- Outcome / user value: Traceability can be kept current through a lightweight delivery rule set instead of one broad workflow decision that is hard to implement or validate.
+- Scope notes: In scope, separating the workflow question into implementation-start ownership and PR-stage ownership so the decisions can be sequenced cleanly. In scope, defining the minimum timing and fallback expectations for each handoff point. Out of scope, broader release-process redesign or one oversized ticket that mixes all delivery moments together.
 - Acceptance criteria:
-  - [ ] The workflow defines who is responsible for associating a ticket with its remote branch or commit URL.
-  - [ ] The workflow defines who is responsible for associating a ticket with its PR URL.
-  - [ ] The workflow defines when those links must be added or updated during implementation.
-  - [ ] The workflow defines the expected behavior when implementation starts before a remote git link or PR exists.
-- Dependencies: BACKLOG-020, cross-team workflow agreement.
+  - [ ] The ownership work is represented as smaller stories with one primary outcome each.
+  - [ ] The child stories clearly separate implementation-start linking from PR-stage linking.
+  - [ ] The split makes it clear which workflow decision can move toward implementation first.
+  - [ ] Sprint-ready implementation work can move on the child stories instead of this parent coordination card.
+- Dependencies: BACKLOG-049, BACKLOG-050, BACKLOG-020, cross-team workflow agreement.
+- Links: current session request
+- Implementation notes: Product direction preserved: traceability should stay current during normal delivery work, but the workflow decision is now split by delivery moment so implementation can proceed in smaller slices.
+
+## BACKLOG-050 - Define ownership for adding PR links during delivery
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:11:01.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 9
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define who associates a ticket with its pull request destination and when that traceability update must happen.
+- Outcome / user value: Users can find active review work from the ticket without waiting for manual backlog cleanup after code is already in flight.
+- Scope notes: In scope, ownership and timing for PR-link association, plus the expected ticket state when implementation has started but no pull request exists yet. Out of scope, the branch or commit linkage decision already covered by work-start traceability.
+- Acceptance criteria:
+  - [ ] The story defines who is responsible for associating a ticket with its PR destination.
+  - [ ] The story defines when that PR association must exist during the normal delivery flow.
+  - [ ] The story defines the expected ticket behavior before a pull request exists.
+  - [ ] The story defines whether a missing PR should appear as a calm pending state or a visible exception once review should have started.
+- Dependencies: BACKLOG-020, BACKLOG-049, PR creation workflow agreement, traceability metadata lookup contract.
 - Links: current session request
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
-## Ready
+## BACKLOG-052 - Show PR links on tickets when traceability exists
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:12:55.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 9
+- Ready for Implementation?: No
+- Tech handoff owner: Ben
+- Summary: Show each ticket's pull request link in the ticket UI when integration-derived traceability metadata exposes a PR destination.
+- Outcome / user value: Users can jump directly from a ticket to active review work instead of searching GitHub or waiting for manual updates.
+- Scope notes: In scope, resolving the PR URL from the integration-derived pull-request destination associated with that `BACKLOG-XXX` item, showing a calm pending state when no PR exists yet, and keeping any existing editor preview as a separate helper. Out of scope, git-link rendering or manual URL entry.
+- Acceptance criteria:
+  - [ ] A ticket resolves its PR URL from the integration-derived pull-request destination associated with that `BACKLOG-XXX` item.
+  - [ ] If the PR destination exists, the ticket shows a visible PR link that can be opened directly from the ticket UI.
+  - [ ] If no PR destination exists yet, the ticket shows a clear calm state instead of empty or confusing UI.
+  - [ ] Any existing editor preview remains available as a separate helper and is not replaced by the PR link.
+  - [ ] The ticket remains readable and compact, with the PR link presented as a supporting action rather than replacing core story content.
+- Dependencies: BACKLOG-020, BACKLOG-023, BACKLOG-050, traceability metadata availability, traceability metadata lookup contract, ticket-editor helper contract decision.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
 
-### Epic 6, Board switching and numeric selector hygiene
-
-## BACKLOG-039 - Warn before switching projects during active Paula work
+## BACKLOG-053 - Use compact git and PR icons across ticket layouts
 - Status: Ready
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T08:49:44.245Z
+- Updated: 2026-04-14T09:33:54.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: 
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Replace traceability placeholder text with compact git and PR icon actions that render consistently in both swimlanes and the sprint planner.
+- Outcome / user value: Users can open the branch or PR from either ticket layout through small familiar affordances instead of noisy placeholder text that distracts from the card content.
+- Scope notes: In scope, showing a clickable git-branch icon when branch traceability exists, showing a clickable merge-request or pull-request icon when PR traceability exists, hiding either icon entirely when its destination is unavailable, and using the same traceability treatment in both swimlanes and the sprint planner. In scope, keeping the icon treatment compact and clearly secondary to the ticket content. Out of scope, fallback text such as `Get Pending`, manual URL entry, or layout-specific traceability behavior that differs between the two ticket surfaces.
+- Acceptance criteria:
+  - [ ] If branch traceability exists for a ticket, the ticket shows a compact clickable branch icon that opens the branch destination.
+  - [ ] If PR traceability exists for a ticket, the ticket shows a compact clickable merge or pull-request icon that opens the PR destination.
+  - [ ] If branch traceability is missing, the branch icon is not shown.
+  - [ ] If PR traceability is missing, the PR icon is not shown.
+  - [ ] The same icon-only traceability treatment appears on tickets in both swimlanes and the sprint planner.
+  - [ ] The traceability affordances remain visually secondary and do not introduce placeholder text or empty UI chrome when destinations are unavailable.
+- Dependencies: BACKLOG-051, BACKLOG-052, ticket card action area, sprint planner ticket rendering, swimlane ticket rendering.
+- Links: current session request
+- Implementation notes: Follow-up product direction after the initial traceability link work. Replace visible pending text with compact icon affordances and keep the branch and PR behaviors aligned across both ticket surfaces.
+
+## Ready
+
+### Epic 4, Ticket traceability
+
+## In Progress
+
+## Testing
+
+## Review
+
+## Done
+
+### Epic 6, Board switching and numeric selector hygiene
+
+## BACKLOG-039 - Warn before switching projects during active Paula work
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T08:56:15Z
 - Due Date: 
 - Priority: P1
 - Effort: 1
@@ -237,43 +442,39 @@ Use for completed items with outcome notes.
   - [ ] If Paula is not actively working, the project switch continues without showing the warning.
 - Dependencies: BACKLOG-002, project switch flow, Paula active-session state.
 - Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
+- Implementation notes: Added a project-switch confirmation overlay that appears only when the active Paula session is attached to the current backlog, with explicit Stay here and Continue switch actions. Build passed.
 
 ## BACKLOG-041 - Sort epic and sprint selectors by numeric value
-- Status: Ready
+- Status: Done
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T08:49:39.985Z
+- Updated: 2026-04-14T09:02:00.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 1
 - Sprint Assigned: Sprint 7
-- Ready for Implementation?: Yes
+- Ready for Implementation?: No
 - Tech handoff owner: Ben
 - Summary: Sort epic and sprint options by their numeric value instead of relying on lexical ordering or mixed label text.
 - Outcome / user value: Users can trust selector ordering when epics and sprints reach double digits or include labels that otherwise sort incorrectly as plain text.
 - Scope notes: In scope, sorting epic selector options by increasing numeric value and sorting sprint selector options by decreasing numeric value so newer sprints remain first. In scope, extracting the numeric portion from labels that follow the established `Epic N` and `Sprint N` pattern. Out of scope, renaming labels, changing assignment semantics, or redefining which sprint counts as current.
 - Acceptance criteria:
-  - [ ] Epic selector options sort by the numeric value in the epic label rather than plain-text order.
-  - [ ] Sprint selector options sort by the numeric value in the sprint label rather than plain-text order.
-  - [ ] Epic options with labels `Epic 2`, `Epic 10`, and `Epic 11` appear in numeric order rather than `Epic 10` before `Epic 2`.
-  - [ ] Sprint options with labels `Sprint 2`, `Sprint 10`, and `Sprint 11` appear newest first by numeric value.
-  - [ ] Labels that do not expose a usable numeric value fall back to stable plain-text ordering after numeric labels.
+  - [ ] Define acceptance criteria
 - Dependencies: BACKLOG-025, epic selector ordering, sprint selector ordering, numeric label parsing rule, BACKLOG-040.
 - Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
+- Implementation notes: Added shared numeric-label sorting helper for epic and sprint selectors, with numeric labels ordered first and stable plain-text fallback for labels without usable numbers. Build verified locally with `npm run build`.
 
 ## BACKLOG-042 - Reset invalid Current Sprint after board changes
-- Status: Ready
+- Status: Done
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T08:40:44.000Z
+- Updated: 2026-04-14T09:03:43Z
 - Due Date: 
 - Priority: P0
 - Effort: 2
-- Sprint Assigned: 
+- Sprint Assigned: Sprint 7
 - Ready for Implementation?: Yes
 - Tech handoff owner: Ben
 - Summary: Recover the Current Sprint selector when a board change leaves it pointing at a sprint value that the new board cannot represent.
@@ -287,11 +488,118 @@ Use for completed items with outcome notes.
   - [ ] If the new board has no selectable sprints, the selector shows a clear empty state and remains usable when sprint options appear later.
 - Dependencies: BACKLOG-018, board switch flow, current sprint selector state, sprint option hydration.
 - Links: current session request
-- Implementation notes: Leave blank until the item is `Ready` or in execution
+- Implementation notes: Implemented invalid-sprint recovery in the current sprint state effect, with fallback to the newest available sprint, preservation when still valid, and build validation passed.
 
-## In Progress
+## BACKLOG-047 - Validate new epic and sprint labels against `N` format
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:28:38.334Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 8
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Define the entry-time rule for new or edited epic and sprint labels so board-visible names stay in the `Epic N` and `Sprint N` format.
+- Outcome / user value: Users get consistent selector labels without guessing what naming pattern the product expects.
+- Scope notes: In scope, treating `Epic N` and `Sprint N` as the only valid formats for newly created or edited labels, validating that rule at entry time, and showing inline guidance before save when the value does not match. In scope, applying the same rule anywhere the product lets users create or rename these labels. Out of scope, migration behavior for older labels that already exist in stored backlog files.
+- Acceptance criteria:
+  - [ ] When a user creates or renames an epic, the accepted format is `Epic N` where `N` is a positive integer.
+  - [ ] When a user creates or renames a sprint, the accepted format is `Sprint N` where `N` is a positive integer.
+  - [ ] If a user enters a value that does not match the required format, the edit flow shows an inline validation message before save.
+  - [ ] The product prevents saving a new or edited epic or sprint label until the value matches the required format.
+  - [ ] Older labels that already exist are not rewritten by this ticket.
+- Dependencies: selector label rendering, backlog edit flow, epic naming rules, sprint naming rules.
+- Links: current session request
+- Implementation notes: Ready for implementation. Product rule is to block invalid new or edited labels rather than silently normalizing them.
 
-## Done
+## BACKLOG-051 - Show git links on tickets when traceability exists
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:26:00Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 8
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Show each ticket's git link in the ticket UI when integration-derived traceability metadata exposes a branch or commit destination.
+- Outcome / user value: Users can jump from a backlog ticket to the active implementation location without searching across repos or branches manually.
+- Scope notes: In scope, resolving the git URL from the integration-derived branch or commit destination associated with that `BACKLOG-XXX` item, showing a calm pending state when no git destination exists yet, and keeping any existing editor preview as a separate helper. In scope, placing the link where it is clearly attached to the ticket without crowding core story content. Out of scope, PR-link rendering or manual URL entry.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-020, BACKLOG-023, BACKLOG-049, traceability metadata availability, traceability metadata lookup contract, ticket-editor helper contract decision.
+- Links: current session request
+- Implementation notes: Verified in-app git-link rendering plus separate pending/helper states, and build validated locally with `npm run build`.
+
+### Epic 4, Ticket traceability
+
+## BACKLOG-020 - Choose the source for git and PR links
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:58:00Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 6
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Use integration-derived traceability metadata, not markdown fields, as the source for each ticket's git link and PR link.
+- Outcome / user value: Users get one reliable place to jump from a ticket to implementation work instead of inconsistent team-by-team conventions.
+- Scope notes: In scope, treating ticket IDs as the stable key and resolving git and PR destinations from integration-derived metadata outside the markdown backlog, while preserving the current schema and supporting empty states when no linked work exists yet. Out of scope, adding new mandatory markdown fields, manually storing branch or PR URLs in story bodies, or shipping the ticket link UI before the metadata lookup contract is implemented.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: backlog schema constraints, ticket ID stability, implementation workflow agreement.
+- Links: current session request
+- Implementation notes: Ben confirmed the UI should keep markdown as the source of truth for ticket content while resolving git and PR destinations from integration-derived metadata keyed by `BACKLOG-XXX`. Tess validated the no-link behavior and the split git/PR model, and Paula signed off on the product decision.
+
+## BACKLOG-023 - Keep older backlogs usable without traceability data
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-13
+- Updated: 2026-04-13T23:56:43Z
+- Due Date: 
+- Priority: P2
+- Effort: 2
+- Sprint Assigned: Sprint 6
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Define how older backlog files behave when ticket traceability is available but no traceability data exists yet.
+- Outcome / user value: Teams can open older backlogs safely without surprise breakage, silent mutation, or confusing empty-link behavior.
+- Scope notes: In scope, first-load behavior for older backlogs, missing-data defaults, and non-destructive enrichment that preserves the current markdown schema while allowing traceability links to appear only when metadata exists. Out of scope, forced markdown migrations, adding new required fields, or silently rewriting older backlog files.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-020, legacy backlog compatibility rules, shared no-link state behavior.
+- Links: current session request
+- Implementation notes: Closed after Ben -> Tess -> Paula sign-off. Legacy backlogs stay usable without migration or silent mutation, and traceability links remain non-destructive, metadata-driven, and calm in the no-link state.
+
+## BACKLOG-049 - Define ownership for adding git links at work start
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T09:18:00.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 8
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Define who associates a ticket with its branch or commit destination when implementation begins.
+- Outcome / user value: Tickets gain useful traceability early enough that users can jump from backlog work to active implementation without waiting for a later cleanup pass.
+- Scope notes: In scope, requiring the implementation-start flow to associate the ticket with a branch or commit destination as soon as active work begins, plus the fallback pending state when no remote destination exists yet. In scope, using the traceability metadata keyed by `BACKLOG-XXX` as the only source for that association. Out of scope, PR-stage ownership or broader release workflow.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: BACKLOG-020, implementation start workflow agreement, traceability metadata lookup contract.
+- Links: current session request
+- Implementation notes: Completed as a product decision. Implementation-start automation owns the first git-side traceability link, with `BACKLOG-XXX` metadata as the source of truth and a calm pending state until a destination exists.
 
 ### Epic 5, Workflow states and card emphasis
 
@@ -637,50 +945,6 @@ Use for completed items with outcome notes.
 - Dependencies: BACKLOG-010, BACKLOG-011, Paula intake prompt handling.
 - Links: current session request
 - Implementation notes: Inbox plus now arms a hidden intake prefix on the next Paula submission only, preserving the user's text verbatim after the prefix.
-
-### Epic 4, Ticket traceability
-
-## BACKLOG-020 - Choose the source for git and PR links
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:58:00Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 6
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Use integration-derived traceability metadata, not markdown fields, as the source for each ticket's git link and PR link.
-- Outcome / user value: Users get one reliable place to jump from a ticket to implementation work instead of inconsistent team-by-team conventions.
-- Scope notes: In scope, treating ticket IDs as the stable key and resolving git and PR destinations from integration-derived metadata outside the markdown backlog, while preserving the current schema and supporting empty states when no linked work exists yet. Out of scope, adding new mandatory markdown fields, manually storing branch or PR URLs in story bodies, or shipping the ticket link UI before the metadata lookup contract is implemented.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: backlog schema constraints, ticket ID stability, implementation workflow agreement.
-- Links: current session request
-- Implementation notes: Ben confirmed the UI should keep markdown as the source of truth for ticket content while resolving git and PR destinations from integration-derived metadata keyed by `BACKLOG-XXX`. Tess validated the no-link behavior and the split git/PR model, and Paula signed off on the product decision.
-
-## BACKLOG-023 - Keep older backlogs usable without traceability data
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-13
-- Updated: 2026-04-13T23:56:43Z
-- Due Date: 
-- Priority: P2
-- Effort: 2
-- Sprint Assigned: Sprint 6
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Define how older backlog files behave when ticket traceability is available but no traceability data exists yet.
-- Outcome / user value: Teams can open older backlogs safely without surprise breakage, silent mutation, or confusing empty-link behavior.
-- Scope notes: In scope, first-load behavior for older backlogs, missing-data defaults, and non-destructive enrichment that preserves the current markdown schema while allowing traceability links to appear only when metadata exists. Out of scope, forced markdown migrations, adding new required fields, or silently rewriting older backlog files.
-- Acceptance criteria:
-  - [ ] Define acceptance criteria
-- Dependencies: BACKLOG-020, legacy backlog compatibility rules, shared no-link state behavior.
-- Links: current session request
-- Implementation notes: Closed after Ben -> Tess -> Paula sign-off. Legacy backlogs stay usable without migration or silent mutation, and traceability links remain non-destructive, metadata-driven, and calm in the no-link state.
 
 ### Epic 3, Future UX and workflow polish
 

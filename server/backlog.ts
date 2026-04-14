@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import {
   BacklogDocument,
   BacklogItem,
@@ -103,6 +104,43 @@ function safeHandoffOwner(value: string): BacklogItem["techHandoffOwner"] {
   ) as BacklogItem["techHandoffOwner"];
 }
 
+function getGitRemoteUrl() {
+  const result = spawnSync("git", ["config", "--get", "remote.origin.url"], { encoding: "utf8" });
+  const raw = result.status === 0 ? result.stdout.trim() : "";
+  if (!raw) return "";
+  if (raw.startsWith("git@")) {
+    const match = raw.match(/^git@([^:]+):(.+)$/);
+    if (!match) return raw;
+    return `https://${match[1]}/${match[2].replace(/\.git$/, "")}`;
+  }
+  return raw.replace(/\.git$/, "");
+}
+
+function resolveGitUrl(reference: string, source: "branch" | "commit" | "unknown") {
+  const remote = getGitRemoteUrl();
+  if (!remote || !reference) return "";
+  if (source === "commit") return `${remote}/commit/${encodeURIComponent(reference)}`;
+  if (source === "branch") return `${remote}/tree/${encodeURIComponent(reference)}`;
+  return remote;
+}
+
+function parseTraceability(rawLinks: string) {
+  const lines = rawLinks.split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/^\s*(git|branch|commit)\s*[:=-]\s*(\S.*)$/i);
+    if (!match) continue;
+    const label = match[1].toLowerCase();
+    const reference = match[2].trim();
+    const source = (label === "commit" ? "commit" : label === "branch" ? "branch" : "unknown") as
+      | "branch"
+      | "commit"
+      | "unknown";
+    const gitUrl = resolveGitUrl(reference, source);
+    return { gitUrl, status: gitUrl ? ("linked" as const) : ("pending" as const), source, reference };
+  }
+  return { gitUrl: "", status: "pending" as const, source: "unknown" as const, reference: "" };
+}
+
 function toItem(blockLines: string[], epic: string): BacklogItem | null {
   const heading = blockLines[0]?.match(/^##\s+(BACKLOG-\d+)\s+-\s+(.+)$/);
   if (!heading) return null;
@@ -123,6 +161,7 @@ function toItem(blockLines: string[], epic: string): BacklogItem | null {
     }
   }
 
+  const links = fields.get("Links") ?? "";
   return {
     id: heading[1],
     title: heading[2].trim(),
@@ -147,8 +186,9 @@ function toItem(blockLines: string[], epic: string): BacklogItem | null {
     scopeNotes: fields.get("Scope notes") ?? "",
     acceptanceCriteria,
     dependencies: fields.get("Dependencies") ?? "",
-    links: fields.get("Links") ?? "",
+    links,
     implementationNotes: fields.get("Implementation notes") ?? "",
+    traceability: parseTraceability(links),
   };
 }
 
