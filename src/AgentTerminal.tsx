@@ -128,6 +128,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   const pendingIntakeContextRef = useRef<string | null>(null);
   const pendingUserEchoesRef = useRef<string[]>([]);
   const outboundQueueRef = useRef<string[]>([]);
+  const previousTypingStateRef = useRef(false);
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -389,6 +390,21 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       behavior: "smooth",
     });
   }, [messages, activeTab, isAgentTyping]);
+
+  useEffect(() => {
+    const wasTyping = previousTypingStateRef.current;
+    previousTypingStateRef.current = isAgentTyping;
+
+    if (!wasTyping || isAgentTyping) {
+      return;
+    }
+
+    if (queuedCommands.length === 0 || activeTab !== "chat") {
+      return;
+    }
+
+    sendQueuedCommand(0);
+  }, [activeTab, isAgentTyping, queuedCommands]);
 
   useEffect(() => {
     if (!backlogPath) {
