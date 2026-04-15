@@ -77,7 +77,7 @@ interface SprintSummaryResponse {
   suggestedSummary?: string;
   overridden?: boolean;
   ticketIdHash?: string;
-  source?: "config" | "generated";
+  source?: "config" | "fallback";
 }
 
 let activeTerminalSession: AgentTerminalSession | null = null;
@@ -1038,7 +1038,7 @@ app.get("/api/backlog/sprints/summary", async (request, response) => {
     response.json({
       sprint,
       ticketIdHash,
-      source: "generated",
+      source: "fallback",
       ...summary,
     });
   } catch (error) {

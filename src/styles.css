@@ -1274,9 +1274,43 @@ button {
 
 .banner-error {
   margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 14px 18px;
   border-radius: 20px;
   color: #7f1d1d;
+}
+
+.banner-error__message {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.banner-error__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(127, 29, 29, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  box-shadow: none;
+  flex: 0 0 auto;
+}
+
+.banner-error__dismiss:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(127, 29, 29, 0.28);
+}
+
+.banner-error__dismiss svg {
+  width: 14px;
+  height: 14px;
 }
 
 .current-sprint-section {
@@ -1478,27 +1512,40 @@ button {
 }
 
 .current-sprint-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 18px;
-  flex-wrap: wrap;
 }
 
 .current-sprint-header.is-collapsed {
   align-items: center;
 }
 
-.current-sprint-toggle {
-  display: inline-flex;
+.current-sprint-header.is-collapsed .current-sprint-toggle {
   align-items: flex-start;
-  align-self: flex-start;
+}
+
+.current-sprint-header.is-collapsed .sprint-metrics-row {
+  align-self: center;
+}
+
+.current-sprint-toggle {
+  display: flex;
+  align-items: flex-start;
   gap: 12px;
+  min-width: 0;
+}
+
+.current-sprint-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
-  text-align: left;
+  flex: 0 0 auto;
 }
 
 .current-sprint-toggle-icon {
@@ -1522,6 +1569,8 @@ button {
 .current-sprint-heading {
   display: grid;
   gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .current-sprint-name-wrap {
@@ -1539,16 +1588,29 @@ button {
 
 .current-sprint-selector-stack {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.current-sprint-expanded-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
 }
 
 .current-sprint-selector-row {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 132px 38px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .current-sprint-selector-row select {
+  width: 132px;
   min-width: 132px;
 }
 
@@ -1560,38 +1622,88 @@ button {
   font-size: 1.1rem;
 }
 
-.sprint-summary-refresh-button {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  border-radius: 12px;
+.current-sprint-goal-panel {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, white 82%, var(--panel-tint));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .current-sprint-goal-summary {
-  max-width: min(58ch, 100%);
-  font-size: 0.92rem;
-  line-height: 1.35;
-  color: var(--muted);
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: none;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--accent-deep);
 }
 
 .current-sprint-goal-summary-button {
-  padding: 0;
+  display: block;
+  padding: 10px 12px;
   border: 0;
   background: transparent;
   text-align: left;
   cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .current-sprint-goal-summary-input {
-  width: min(58ch, 100%);
+  width: auto;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  box-shadow: none;
+}
+
+.current-sprint-goal-summary-input::placeholder {
+  color: color-mix(in srgb, var(--muted) 72%, white);
+}
+
+.current-sprint-goal-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--accent-deep);
+  border-radius: 0 14px 14px 0;
+  flex: 0 0 auto;
+}
+
+.current-sprint-goal-action:hover:not(:disabled) {
+  background: color-mix(in srgb, white 70%, var(--panel-tint));
+}
+
+.current-sprint-goal-action:disabled {
+  opacity: 0.45;
+}
+
+.current-sprint-goal-action svg {
+  width: 16px;
+  height: 16px;
 }
 
 .current-sprint-goal-summary--ready {
-  color: var(--muted);
+  color: var(--accent-deep);
 }
 
 .current-sprint-goal-summary--empty {
-  color: color-mix(in srgb, var(--muted) 88%, white);
+  color: color-mix(in srgb, var(--muted) 58%, var(--accent-deep) 42%);
 }
 
 .current-sprint-goal-summary--failed {
@@ -1664,7 +1776,19 @@ button {
   height: 15px;
 }
 
-@media (max-width: 1480px) {
+@media (max-width: 1180px) {
+  .current-sprint-header {
+    grid-template-columns: 1fr;
+  }
+
+  .current-sprint-expanded-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sprint-metrics-row {
+    justify-self: start;
+  }
+
   .current-sprint-dropzone {
     grid-template-columns: 1fr;
   }
@@ -1684,9 +1808,9 @@ button {
   }
 }
 
-@media (min-width: 1481px) {
+@media (min-width: 1181px) {
   .current-sprint-header {
-    align-items: center;
+    align-items: start;
   }
 
   .current-sprint-dropzone {
@@ -1717,8 +1841,9 @@ button {
 }
 
 .sprint-metrics-row {
-  align-self: flex-start;
-  align-items: end;
+  align-self: start;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 .sprint-clear-button {
@@ -1764,16 +1889,26 @@ button {
 }
 
 .lane-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
   margin-bottom: 14px;
+}
+
+.lane-header-controls {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  grid-column: 1;
+  justify-self: start;
 }
 
 .lane-header-actions {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  grid-column: 3;
+  justify-self: end;
 }
 
 .lane-add-button {
@@ -1799,12 +1934,6 @@ button {
   stroke-width: 1.9;
 }
 
-.lane-header-title {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
 .lane-toggle {
   display: inline-flex;
   align-items: center;
@@ -1827,6 +1956,9 @@ button {
 .lane-header h2 {
   margin: 0;
   font-size: 1.2rem;
+  grid-column: 2;
+  justify-self: center;
+  text-align: center;
 }
 
 .lane-header span {

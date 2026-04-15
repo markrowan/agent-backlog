@@ -166,7 +166,7 @@ interface SprintGoalSummary {
   suggestedSummary?: string;
   overridden?: boolean;
   ticketIdHash?: string;
-  source?: "config" | "generated";
+  source?: "config" | "fallback";
 }
 
 interface SprintSummaryTaskStatus {
@@ -624,6 +624,7 @@ function App() {
   const [sprintGoalSummary, setSprintGoalSummary] = useState<SprintGoalSummary | null>(null);
   const [sprintSummaryDraft, setSprintSummaryDraft] = useState("");
   const [isEditingSprintSummary, setIsEditingSprintSummary] = useState(false);
+  const [isSavingSprintSummary, setIsSavingSprintSummary] = useState(false);
   const [sprintSummaryTaskStatus, setSprintSummaryTaskStatus] = useState<SprintSummaryTaskStatus | null>(null);
   const [isRefreshingSprintSummaries, setIsRefreshingSprintSummaries] = useState(false);
   const [isAutoGroomStarting, setIsAutoGroomStarting] = useState(false);
@@ -1244,6 +1245,7 @@ function App() {
         const nextSummary = payload as SprintGoalSummary;
         setSprintGoalSummary(nextSummary);
         setSprintSummaryDraft(nextSummary.summary ?? "");
+        setError(null);
       } catch {
         if (cancelled) return;
         const failed = {
@@ -1370,6 +1372,30 @@ function App() {
   const currentSprintEffort = useMemo(() => currentSprintItems.reduce((sum, item) => sum + item.effort, 0), [currentSprintItems]);
   const autoSprintEffortCapNumber = useMemo(() => Number.parseInt(autoSprintEffortCap, 10), [autoSprintEffortCap]);
   const isCurrentSprintOverCapacity = Number.isInteger(autoSprintEffortCapNumber) && currentSprintEffort > autoSprintEffortCapNumber;
+  const sprintMetricsRow = (
+    <div className="metrics-row sprint-metrics-row">
+      <div className="metric-card metric-card--plain">
+        <span className="meta-label">Stories</span>
+        <div className="metric-value">{currentSprintItems.length}</div>
+      </div>
+      <div className={`metric-card metric-card--plain ${isCurrentSprintOverCapacity ? "is-over-capacity" : ""}`}>
+        <span className="meta-label">Effort</span>
+        <div className="metric-value">{currentSprintEffort}</div>
+      </div>
+      {!currentSprintCollapsed ? (
+        <button
+          type="button"
+          className="icon-button sprint-clear-button"
+          aria-label="Clear sprint assignments"
+          title="Clear sprint"
+          disabled={!currentSprintItems.length}
+          onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
+        >
+          {trashIcon()}
+        </button>
+      ) : null}
+    </div>
+  );
 
   const epicOptions = useMemo(() => {
     const epics = new Set<string>(customEpicOptions);
@@ -1663,21 +1689,51 @@ function App() {
     }
   }
 
-  async function saveSprintSummary() {
-    if (!currentSprintSelection.trim()) return;
-    const response = await fetch("/api/backlog/sprints/summary", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sprint: currentSprintSelection, summary: sprintSummaryDraft }),
-    });
-    const payload = (await response.json().catch(() => null)) as SprintGoalSummary | { message?: string } | null;
-    if (!response.ok) {
-      throw new Error((payload as { message?: string } | null)?.message ?? "Failed to save sprint summary");
+  async function saveSprintSummary(nextValue = sprintSummaryDraft) {
+    const sprint = currentSprintSelection.trim();
+    if (!sprint) {
+      setIsEditingSprintSummary(false);
+      return;
     }
-    setSprintGoalSummary(payload as SprintGoalSummary);
-    setSprintSummaryDraft((payload as SprintGoalSummary).summary ?? "");
-    setIsEditingSprintSummary(false);
-    setError(null);
+
+    const trimmedSummary = nextValue.trim();
+    const existingSummary = sprintGoalSummary?.summary?.trim() ?? "";
+
+    if (!trimmedSummary) {
+      setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
+      setIsEditingSprintSummary(false);
+      return;
+    }
+
+    if (trimmedSummary === existingSummary) {
+      setSprintSummaryDraft(trimmedSummary);
+      setIsEditingSprintSummary(false);
+      setError(null);
+      return;
+    }
+
+    setIsSavingSprintSummary(true);
+    try {
+      const response = await fetch("/api/backlog/sprints/summary", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sprint, summary: trimmedSummary }),
+      });
+      const payload = (await response.json().catch(() => null)) as SprintGoalSummary | { message?: string } | null;
+      if (!response.ok) {
+        throw new Error((payload as { message?: string } | null)?.message ?? "Failed to save sprint summary");
+      }
+      setSprintGoalSummary(payload as SprintGoalSummary);
+      setSprintSummaryDraft((payload as SprintGoalSummary).summary ?? "");
+      setIsEditingSprintSummary(false);
+      setError(null);
+    } catch (caught) {
+      setSprintGoalSummary((current) => current ? { ...current, state: "failed" } : current);
+      setError((caught as Error).message || "Sprint summary could not be saved.");
+      throw caught;
+    } finally {
+      setIsSavingSprintSummary(false);
+    }
   }
 
   async function deleteItem(itemId: string) {
@@ -2464,19 +2520,19 @@ function App() {
                 </div>
               </button>
               <button type="button" className={`meta-card metric-card metric-card--plain metric-card--section-break metric-card--button ${activeHeaderPreset === "assigned" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("assigned")}>
-                <span className="meta-label">Planned</span>
+                <span className="meta-label">Scheduled</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.sprintAssigned.trim() && item.status !== "Done").length) ?? 0}
                 </div>
               </button>
               <button type="button" className={`meta-card metric-card metric-card--plain metric-card--button ${activeHeaderPreset === "unassigned" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("unassigned")}>
-                <span className="meta-label">No sprint</span>
+                <span className="meta-label">Backlog</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => !item.sprintAssigned.trim() && item.status !== "Done").length) ?? 0}
                 </div>
               </button>
               <button type="button" className={`meta-card metric-card metric-card--plain metric-card--section-break metric-card--button ${activeHeaderPreset === "ungroomed" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("ungroomed")}>
-                <span className="meta-label">Ungroomed</span>
+                <span className="meta-label">Not ready</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status === "Inbox" || item.status === "Grooming").length) ?? 0}
                 </div>
@@ -2508,7 +2564,20 @@ function App() {
         </div>
       </header>
 
-      {error ? <div className="banner-error">{error}</div> : null}
+      {error ? (
+        <div className="banner-error" role="status" aria-live="polite">
+          <span className="banner-error__message">{error}</span>
+          <button
+            type="button"
+            className="banner-error__dismiss"
+            aria-label="Dismiss notification"
+            title="Dismiss"
+            onClick={() => setError(null)}
+          >
+            {closeIcon()}
+          </button>
+        </div>
+      ) : null}
 
       {showProjectSwitchWarning ? (
         <div className="quick-edit-layer">
@@ -2807,93 +2876,97 @@ function App() {
           }}
         >
           <div className={`current-sprint-header ${currentSprintCollapsed ? "is-collapsed" : ""}`}>
-            <button
-              type="button"
-              className="current-sprint-toggle"
-              onClick={() => setCurrentSprintCollapsed((current) => !current)}
-              aria-expanded={!currentSprintCollapsed}
-              aria-label={currentSprintCollapsed ? "Expand current sprint" : "Collapse current sprint"}
-            >
-              <span className="current-sprint-toggle-icon" aria-hidden="true">
-                {currentSprintCollapsed ? <ChevronRight strokeWidth={1.9} /> : <ChevronDown strokeWidth={1.9} />}
-              </span>
+            <div className="current-sprint-toggle">
+              <button
+                type="button"
+                className="current-sprint-toggle-button"
+                onClick={() => setCurrentSprintCollapsed((current) => !current)}
+                aria-expanded={!currentSprintCollapsed}
+                aria-label={currentSprintCollapsed ? "Expand current sprint" : "Collapse current sprint"}
+              >
+                <span className="current-sprint-toggle-icon" aria-hidden="true">
+                  {currentSprintCollapsed ? <ChevronRight strokeWidth={1.9} /> : <ChevronDown strokeWidth={1.9} />}
+                </span>
+              </button>
               <span className="current-sprint-heading">
                 <span className="eyebrow">Current Sprint</span>
                 {!currentSprintCollapsed ? (
-                  <span className="current-sprint-selector-stack">
-                    <span className="current-sprint-selector-row">
-                      <select
-                        value={currentSprintSelection}
-                        onChange={(event) => setCurrentSprintTarget(event.target.value)}
-                        aria-label="Current sprint"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {(availableSprintTargets.length ? availableSprintTargets : ["Sprint 1"]).map((sprint) => (
-                          <option key={sprint} value={sprint}>
-                            {sprint}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="epic-add-button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openFilterCreator("sprint", event);
-                        }}
-                        aria-label="Create sprint"
-                        title="Create sprint"
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        className="icon-button sprint-summary-refresh-button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void refreshSprintSummaries().catch((caught) => setError((caught as Error).message));
-                        }}
-                        aria-label="Refresh sprint summaries"
-                        title={sprintSummaryTaskStatus?.message ?? "Refresh sprint summaries"}
-                        disabled={isRefreshingSprintSummaries}
-                      >
-                        <Sparkles strokeWidth={1.9} />
-                      </button>
+                  <span className="current-sprint-expanded-row">
+                    <span className="current-sprint-selector-stack">
+                      <span className="current-sprint-selector-row">
+                        <select
+                          value={currentSprintSelection}
+                          onChange={(event) => setCurrentSprintTarget(event.target.value)}
+                          aria-label="Current sprint"
+                        >
+                          {(availableSprintTargets.length ? availableSprintTargets : ["Sprint 1"]).map((sprint) => (
+                            <option key={sprint} value={sprint}>
+                              {sprint}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="epic-add-button"
+                          onClick={(event) => openFilterCreator("sprint", event)}
+                          aria-label="Create sprint"
+                          title="Create sprint"
+                        >
+                          +
+                        </button>
+                        <span className={`current-sprint-goal-panel current-sprint-goal-panel--${sprintGoalSummary?.state ?? "empty"}`}>
+                          {isEditingSprintSummary ? (
+                            <input
+                              className={`current-sprint-goal-summary current-sprint-goal-summary-input current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}
+                              value={sprintSummaryDraft}
+                              onChange={(event) => setSprintSummaryDraft(event.target.value)}
+                              onBlur={(event) => {
+                                void saveSprintSummary(event.target.value).catch(() => undefined);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  void saveSprintSummary((event.target as HTMLInputElement).value).catch(() => undefined);
+                                }
+                                if (event.key === "Escape") {
+                                  setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
+                                  setIsEditingSprintSummary(false);
+                                  setError(null);
+                                }
+                              }}
+                              placeholder="Click ✨ to ask Paula for a sprint summary suggestion."
+                              autoFocus
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className={`current-sprint-goal-summary current-sprint-goal-summary-button current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}
+                              onClick={() => {
+                                setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
+                                setIsEditingSprintSummary(true);
+                              }}
+                              title={sprintGoalSummary?.overridden ? "Edited sprint summary" : "Edit sprint summary"}
+                              disabled={isSavingSprintSummary}
+                            >
+                              {sprintGoalSummary?.summary ?? "Click ✨ to ask Paula for a sprint summary suggestion."}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="current-sprint-goal-action"
+                            onClick={() => {
+                              void refreshSprintSummaries().catch((caught) => setError((caught as Error).message));
+                            }}
+                            aria-label="Refresh sprint summaries"
+                            title={sprintSummaryTaskStatus?.message ?? "Refresh sprint summaries"}
+                            disabled={isRefreshingSprintSummaries || isSavingSprintSummary}
+                          >
+                            <Sparkles strokeWidth={1.9} />
+                          </button>
+                        </span>
+                      </span>
                     </span>
-                    {isEditingSprintSummary ? (
-                      <input
-                        className={`current-sprint-goal-summary current-sprint-goal-summary-input current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}
-                        value={sprintSummaryDraft}
-                        onChange={(event) => setSprintSummaryDraft(event.target.value)}
-                        onClick={(event) => event.stopPropagation()}
-                        onBlur={() => void saveSprintSummary().catch((caught) => setError((caught as Error).message))}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void saveSprintSummary().catch((caught) => setError((caught as Error).message));
-                          }
-                          if (event.key === "Escape") {
-                            setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
-                            setIsEditingSprintSummary(false);
-                          }
-                        }}
-                        placeholder="Click ✨ to ask Paula for a sprint summary suggestion."
-                        autoFocus
-                      />
-                    ) : (
-                      <button
-                        type="button"
-                        className={`current-sprint-goal-summary current-sprint-goal-summary-button current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
-                          setIsEditingSprintSummary(true);
-                        }}
-                        title={sprintGoalSummary?.overridden ? "Edited sprint summary" : "Edit sprint summary"}
-                      >
-                        {sprintGoalSummary?.summary ?? "Click ✨ to ask Paula for a sprint summary suggestion."}
-                      </button>
-                    )}
+                    {sprintMetricsRow}
                   </span>
                 ) : (
                   <span className="current-sprint-name-wrap">
@@ -2904,29 +2977,8 @@ function App() {
                   </span>
                 )}
               </span>
-            </button>
-            <div className="metrics-row sprint-metrics-row">
-              <div className="metric-card metric-card--plain">
-                <span className="meta-label">Stories</span>
-                <div className="metric-value">{currentSprintItems.length}</div>
-              </div>
-              <div className={`metric-card metric-card--plain ${isCurrentSprintOverCapacity ? "is-over-capacity" : ""}`}>
-                <span className="meta-label">Effort</span>
-                <div className="metric-value">{currentSprintEffort}</div>
-              </div>
-              {!currentSprintCollapsed ? (
-                <button
-                  type="button"
-                  className="icon-button sprint-clear-button"
-                  aria-label="Clear sprint assignments"
-                  title="Clear sprint"
-                  disabled={!currentSprintItems.length}
-                  onClick={() => void clearSprintAssignments(currentSprintSelection).catch((caught) => setError((caught as Error).message))}
-                >
-                  {trashIcon()}
-                </button>
-              ) : null}
             </div>
+            {currentSprintCollapsed ? sprintMetricsRow : null}
           </div>
           {!currentSprintCollapsed ? (
             <div className="auto-sprint-results">
@@ -3345,7 +3397,7 @@ function App() {
               }}
             >
               <div className="lane-header">
-                <div className="lane-header-title">
+                <div className="lane-header-controls">
                   <button
                     type="button"
                     className="lane-toggle"
@@ -3365,8 +3417,8 @@ function App() {
                   >
                     {closeIcon()}
                   </button>
-                  <h2>{status}</h2>
                 </div>
+                <h2>{status}</h2>
                 <div className="lane-header-actions">
                   {status === "Inbox" ? (
                     <button
