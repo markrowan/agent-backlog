@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Download, FolderOpen, GitBranch, GitPullRequest, Maximize2, Minimize2, PlusSquare, Settings2, Trash2, Undo2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FolderOpen, GitBranch, GitPullRequest, Maximize2, Minimize2, PlusSquare, Settings2, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import AgentTerminal from "./AgentTerminal";
 import {
   BacklogItem,
@@ -163,6 +163,18 @@ interface SprintGoalSummary {
   sprint: string;
   state: "ready" | "empty" | "failed";
   summary: string;
+  suggestedSummary?: string;
+  overridden?: boolean;
+  ticketIdHash?: string;
+  source?: "config" | "generated";
+}
+
+interface SprintSummaryTaskStatus {
+  startedAt: number;
+  message: string | null;
+  status: "idle" | "running" | "completed" | "failed";
+  completedSprints: string[];
+  failedSprints: string[];
 }
 
 type DragSource = "board" | "sprint";
@@ -610,6 +622,10 @@ function App() {
   const [autoSprintProposal, setAutoSprintProposal] = useState<null | { selected: string[]; excluded: Array<{ id: string; reason: string }>; used: number; cap: number; sprint: string }>(null);
   const [autoSprintTaskStatus, setAutoSprintTaskStatus] = useState<AutoSprintTaskStatus | null>(null);
   const [sprintGoalSummary, setSprintGoalSummary] = useState<SprintGoalSummary | null>(null);
+  const [sprintSummaryDraft, setSprintSummaryDraft] = useState("");
+  const [isEditingSprintSummary, setIsEditingSprintSummary] = useState(false);
+  const [sprintSummaryTaskStatus, setSprintSummaryTaskStatus] = useState<SprintSummaryTaskStatus | null>(null);
+  const [isRefreshingSprintSummaries, setIsRefreshingSprintSummaries] = useState(false);
   const [isAutoGroomStarting, setIsAutoGroomStarting] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortKey[]>([...DEFAULT_SORT_ORDER]);
   const [sortDirections, setSortDirections] = useState<Record<SortKey, SortDirection>>({ ...DEFAULT_SORT_DIRECTIONS });
@@ -1203,15 +1219,12 @@ function App() {
   useEffect(() => {
     if (!data || !currentSprintSelection.trim()) {
       setSprintGoalSummary(null);
+      setSprintSummaryDraft("");
+      setIsEditingSprintSummary(false);
       return;
     }
 
     let cancelled = false;
-    setSprintGoalSummary({
-      sprint: currentSprintSelection,
-      state: "ready",
-      summary: "Paula is reading this sprint...",
-    });
 
     void (async () => {
       try {
@@ -1219,28 +1232,34 @@ function App() {
         const payload = (await response.json().catch(() => null)) as SprintGoalSummary | { message?: string } | null;
         if (cancelled) return;
         if (!response.ok) {
-          setSprintGoalSummary({
+          const failed = {
             sprint: currentSprintSelection,
-            state: "failed",
-            summary: (payload as { message?: string } | null)?.message ?? "Paula could not generate this sprint summary.",
-          });
+            state: "failed" as const,
+            summary: (payload as { message?: string } | null)?.message ?? "Paula could not load this sprint summary.",
+          };
+          setSprintGoalSummary(failed);
+          setSprintSummaryDraft(failed.summary);
           return;
         }
-        setSprintGoalSummary(payload as SprintGoalSummary);
+        const nextSummary = payload as SprintGoalSummary;
+        setSprintGoalSummary(nextSummary);
+        setSprintSummaryDraft(nextSummary.summary ?? "");
       } catch {
         if (cancelled) return;
-        setSprintGoalSummary({
+        const failed = {
           sprint: currentSprintSelection,
-          state: "failed",
-          summary: "Paula could not generate this sprint summary right now.",
-        });
+          state: "failed" as const,
+          summary: "Paula could not load this sprint summary right now.",
+        };
+        setSprintGoalSummary(failed);
+        setSprintSummaryDraft(failed.summary);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [currentSprintSelection, data?.path, data?.version]);
+  }, [currentSprintSelection, data?.path, data?.version, sprintSummaryTaskStatus?.message]);
 
   useEffect(() => {
     if (selectedStatus === ALL_STATUSES) {
@@ -1281,6 +1300,37 @@ function App() {
     setCurrentSprintTarget(previousSprint);
     setCustomSprintOptions((current) => (current.includes(previousSprint) ? current : [...current, previousSprint]));
   }, [currentSprintItems.length, currentSprintSelection, data]);
+
+  useEffect(() => {
+    if (!isRefreshingSprintSummaries) {
+      return;
+    }
+
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void (async () => {
+        try {
+          const response = await fetch("/api/backlog/sprints/summaries/status");
+          const payload = (await response.json().catch(() => null)) as SprintSummaryTaskStatus | null;
+          if (!response.ok || cancelled || !payload) return;
+          setSprintSummaryTaskStatus(payload);
+          if (payload.status !== "running") {
+            setIsRefreshingSprintSummaries(false);
+            await loadBacklog({ silent: true });
+          }
+        } catch {
+          if (!cancelled) {
+            setIsRefreshingSprintSummaries(false);
+          }
+        }
+      })();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [isRefreshingSprintSummaries]);
 
   useEffect(() => {
     if (!isAutoSprintRunning) {
@@ -1587,6 +1637,46 @@ function App() {
     const updated = (await response.json()) as BacklogResponse;
     setData({ ...data, version: updated.version, document: updated.document });
     latestVersionRef.current = updated.version;
+    setError(null);
+  }
+
+  async function refreshSprintSummaries() {
+    try {
+      setIsRefreshingSprintSummaries(true);
+      setSprintSummaryTaskStatus({
+        startedAt: Date.now(),
+        message: "Paula is building sprint summaries.",
+        status: "running",
+        completedSprints: [],
+        failedSprints: [],
+      });
+      const response = await fetch("/api/backlog/sprints/summaries/refresh", { method: "POST" });
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok && response.status !== 202) {
+        throw new Error(payload?.message ?? "Failed to refresh sprint summaries");
+      }
+      setAgentStatus(payload?.message ?? "Paula is building sprint summaries in the background.");
+      setError(null);
+    } catch (caught) {
+      setIsRefreshingSprintSummaries(false);
+      setError((caught as Error).message);
+    }
+  }
+
+  async function saveSprintSummary() {
+    if (!currentSprintSelection.trim()) return;
+    const response = await fetch("/api/backlog/sprints/summary", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sprint: currentSprintSelection, summary: sprintSummaryDraft }),
+    });
+    const payload = (await response.json().catch(() => null)) as SprintGoalSummary | { message?: string } | null;
+    if (!response.ok) {
+      throw new Error((payload as { message?: string } | null)?.message ?? "Failed to save sprint summary");
+    }
+    setSprintGoalSummary(payload as SprintGoalSummary);
+    setSprintSummaryDraft((payload as SprintGoalSummary).summary ?? "");
+    setIsEditingSprintSummary(false);
     setError(null);
   }
 
@@ -2756,13 +2846,62 @@ function App() {
                       >
                         +
                       </button>
+                      <button
+                        type="button"
+                        className="icon-button sprint-summary-refresh-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void refreshSprintSummaries().catch((caught) => setError((caught as Error).message));
+                        }}
+                        aria-label="Refresh sprint summaries"
+                        title={sprintSummaryTaskStatus?.message ?? "Refresh sprint summaries"}
+                        disabled={isRefreshingSprintSummaries}
+                      >
+                        <Sparkles strokeWidth={1.9} />
+                      </button>
                     </span>
-                    <span className={`current-sprint-goal-summary current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}>
-                      {sprintGoalSummary?.summary ?? "Pick a sprint to see its goal summary."}
-                    </span>
+                    {isEditingSprintSummary ? (
+                      <input
+                        className={`current-sprint-goal-summary current-sprint-goal-summary-input current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}
+                        value={sprintSummaryDraft}
+                        onChange={(event) => setSprintSummaryDraft(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        onBlur={() => void saveSprintSummary().catch((caught) => setError((caught as Error).message))}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void saveSprintSummary().catch((caught) => setError((caught as Error).message));
+                          }
+                          if (event.key === "Escape") {
+                            setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
+                            setIsEditingSprintSummary(false);
+                          }
+                        }}
+                        placeholder="Click ✨ to ask Paula for a sprint summary suggestion."
+                        autoFocus
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className={`current-sprint-goal-summary current-sprint-goal-summary-button current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSprintSummaryDraft(sprintGoalSummary?.summary ?? "");
+                          setIsEditingSprintSummary(true);
+                        }}
+                        title={sprintGoalSummary?.overridden ? "Edited sprint summary" : "Edit sprint summary"}
+                      >
+                        {sprintGoalSummary?.summary ?? "Click ✨ to ask Paula for a sprint summary suggestion."}
+                      </button>
+                    )}
                   </span>
                 ) : (
-                  <span className="current-sprint-name">{currentSprintSelection}</span>
+                  <span className="current-sprint-name-wrap">
+                    <span className="current-sprint-name">{currentSprintSelection}</span>
+                    <span className={`current-sprint-goal-summary current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}>
+                      {sprintGoalSummary?.summary ?? "No sprint summary yet."}
+                    </span>
+                  </span>
                 )}
               </span>
             </button>

@@ -2,6 +2,20 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+export interface SprintSummaryConfigEntry {
+  sprint: string;
+  summary: string;
+  suggestedSummary: string;
+  ticketIdHash: string;
+  overridden: boolean;
+  updatedAt: number;
+}
+
+export interface BacklogSprintSummaryConfigEntry {
+  backlogPath: string;
+  summaries: Record<string, SprintSummaryConfigEntry>;
+}
+
 export interface RecentBacklogConfigEntry {
   path: string;
   displayName: string;
@@ -11,6 +25,7 @@ export interface RecentBacklogConfigEntry {
 export interface AppConfig {
   agentCommand: string;
   recentBacklogs: RecentBacklogConfigEntry[];
+  sprintSummaries: Record<string, BacklogSprintSummaryConfigEntry>;
 }
 
 export const DEFAULT_AGENT_COMMAND = 'codex --no-alt-screen -a never -s danger-full-access --add-dir "$BACKLOG_DIR" "$BACKLOG_BOOTSTRAP"';
@@ -40,10 +55,35 @@ function normalizeConfig(input: Partial<AppConfig> | null | undefined): AppConfi
 
   const rawAgentCommand = String(input?.agentCommand ?? DEFAULT_AGENT_COMMAND).trim() || DEFAULT_AGENT_COMMAND;
   const agentCommand = LEGACY_DEFAULT_AGENT_COMMANDS.get(rawAgentCommand) ?? rawAgentCommand;
+  const sprintSummaries = Object.fromEntries(
+    Object.entries(input?.sprintSummaries ?? {}).flatMap(([key, value]) => {
+      const backlogPath = String(value?.backlogPath ?? key).trim();
+      if (!backlogPath) return [];
+      const summaries = Object.fromEntries(
+        Object.entries(value?.summaries ?? {}).flatMap(([sprintKey, entry]) => {
+          const sprint = String(entry?.sprint ?? sprintKey).trim();
+          const summary = String(entry?.summary ?? "").trim();
+          const suggestedSummary = String(entry?.suggestedSummary ?? summary).trim();
+          const ticketIdHash = String(entry?.ticketIdHash ?? "").trim();
+          if (!sprint) return [];
+          return [[sprint, {
+            sprint,
+            summary,
+            suggestedSummary,
+            ticketIdHash,
+            overridden: Boolean(entry?.overridden),
+            updatedAt: Number(entry?.updatedAt ?? Date.now()),
+          }]];
+        }),
+      );
+      return [[backlogPath, { backlogPath, summaries }]];
+    }),
+  );
 
   return {
     agentCommand,
     recentBacklogs,
+    sprintSummaries,
   };
 }
 
@@ -88,6 +128,24 @@ export async function removeRecentBacklog(pathValue: string) {
   const current = await readConfig();
   return updateConfig({
     recentBacklogs: current.recentBacklogs.filter((entry) => entry.path !== pathValue),
+  });
+}
+
+export async function updateBacklogSprintSummaries(
+  backlogPath: string,
+  updater: (summaries: Record<string, SprintSummaryConfigEntry>) => Record<string, SprintSummaryConfigEntry>,
+) {
+  const current = await readConfig();
+  const currentEntry = current.sprintSummaries[backlogPath] ?? { backlogPath, summaries: {} };
+  const nextSummaries = updater(currentEntry.summaries);
+  return updateConfig({
+    sprintSummaries: {
+      ...current.sprintSummaries,
+      [backlogPath]: {
+        backlogPath,
+        summaries: nextSummaries,
+      },
+    },
   });
 }
 

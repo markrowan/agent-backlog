@@ -3,7 +3,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import { FSWatcher, watch } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   CONFIG_PATH,
@@ -12,6 +12,7 @@ import {
   readConfig,
   rememberRecentBacklog,
   removeRecentBacklog,
+  updateBacklogSprintSummaries,
   updateConfig,
 } from "./config.js";
 import { WebSocketServer, WebSocket } from "ws";
@@ -60,6 +61,25 @@ interface AutoSprintTask {
   status: "idle" | "running" | "completed" | "failed";
 }
 
+interface SprintSummaryTask {
+  startedAt: number;
+  startedVersion: number | null;
+  message: string | null;
+  status: "idle" | "running" | "completed" | "failed";
+  completedSprints: string[];
+  failedSprints: string[];
+}
+
+interface SprintSummaryResponse {
+  sprint: string;
+  state: "ready" | "empty" | "failed";
+  summary: string;
+  suggestedSummary?: string;
+  overridden?: boolean;
+  ticketIdHash?: string;
+  source?: "config" | "generated";
+}
+
 let activeTerminalSession: AgentTerminalSession | null = null;
 const terminalClients = new Set<WebSocket>();
 let autoSprintTask: AutoSprintTask = {
@@ -72,6 +92,14 @@ let autoSprintTask: AutoSprintTask = {
   scope: "filtered",
   sprint: "",
   status: "idle",
+};
+let sprintSummaryTask: SprintSummaryTask = {
+  startedAt: 0,
+  startedVersion: null,
+  message: null,
+  status: "idle",
+  completedSprints: [],
+  failedSprints: [],
 };
 let autoSprintIdleTimer: NodeJS.Timeout | null = null;
 
@@ -217,6 +245,31 @@ function resetAutoSprintTask() {
     scope: "filtered",
     sprint: "",
     status: "idle",
+  };
+}
+
+function setSprintSummaryTask(nextTask: Partial<SprintSummaryTask>) {
+  sprintSummaryTask = {
+    ...sprintSummaryTask,
+    ...nextTask,
+  };
+}
+
+function hashTicketIds(ids: string[]) {
+  return createHash("sha1").update(ids.slice().sort().join("\n")).digest("hex");
+}
+
+function buildSprintSummaryResponse(
+  sprint: string,
+  summary: string,
+  overrides?: Partial<Omit<SprintSummaryResponse, "sprint" | "summary">>,
+): SprintSummaryResponse {
+  return {
+    sprint,
+    summary,
+    state: summary.trim() ? "ready" : "empty",
+    source: "config",
+    ...overrides,
   };
 }
 
@@ -375,6 +428,190 @@ function commandExists(command: string) {
     stdio: "ignore",
   });
   return result.status === 0;
+}
+
+async function generatePaulaSprintSummaries(backlogPath: string, sprints: Array<{ sprint: string; tickets: BacklogItem[] }>) {
+  if (sprints.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const { agentCommand } = await readConfig();
+  if (!agentCommandAvailable(agentCommand)) {
+    const binary = extractCommandBinary(agentCommand) || agentCommand;
+    throw new Error(`${binary} is not installed or not available in PATH.`);
+  }
+
+  const bootstrap = await agentBootstrapPrompt(backlogPath);
+  const backlogDirectory = path.dirname(backlogPath);
+  const process = pty.spawn("sh", ["-lc", agentCommand], {
+    name: "xterm-256color",
+    cols: 120,
+    rows: 30,
+    cwd: globalThis.process.cwd(),
+    env: {
+      ...globalThis.process.env,
+      BACKLOG_BOOTSTRAP: bootstrap,
+      BACKLOG_DIR: backlogDirectory,
+      BACKLOG_FILE: backlogPath,
+    },
+  });
+
+  const instruction = [
+    "Build one concise sprint summary suggestion for each sprint below.",
+    'Reply only with lines in this exact format: PAULA>> SPRINT|<sprint>|<summary>.',
+    "Keep each summary to one sentence, plain language, and under 140 characters.",
+    ...sprints.map(({ sprint, tickets }) => [
+      `Sprint: ${sprint}`,
+      ...tickets.map((ticket) => `- ${ticket.id}: ${ticket.title}${ticket.summary ? ` | ${ticket.summary}` : ""}`),
+    ].join("\n")),
+  ].join("\n\n");
+
+  const summaries = new Map<string, string>();
+  let buffer = "";
+
+  return await new Promise<Map<string, string>>((resolve, reject) => {
+    let settled = false;
+    let idleTimer: NodeJS.Timeout | null = null;
+    let timeoutTimer: NodeJS.Timeout | null = null;
+
+    const cleanup = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        process.kill();
+      } catch {
+        // ignore
+      }
+      if (error) reject(error);
+      else resolve(summaries);
+    };
+
+    const parse = (value: string) => {
+      buffer += normalizeAgentOutput(value);
+      const matches = buffer.matchAll(/^PAULA>>\s*SPRINT\|([^|]+)\|(.+)$/gm);
+      for (const match of matches) {
+        const sprint = String(match[1] ?? "").trim();
+        const summary = String(match[2] ?? "").trim();
+        if (sprint && summary) summaries.set(sprint, summary);
+      }
+      if (summaries.size >= sprints.length) {
+        finish();
+        return;
+      }
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => finish(), 1800);
+    };
+
+    process.onData((data) => {
+      parse(data);
+    });
+
+    process.onExit(() => {
+      finish();
+    });
+
+    timeoutTimer = setTimeout(() => finish(new Error("Paula did not finish generating sprint summaries in time.")), 45000);
+
+    const bootstrapsFromCommand = agentCommand.includes('$BACKLOG_BOOTSTRAP');
+    if (!bootstrapsFromCommand) {
+      submitTerminalInput(process, bootstrap);
+      globalThis.setTimeout(() => submitTerminalInput(process, instruction), 900);
+      return;
+    }
+    globalThis.setTimeout(() => submitTerminalInput(process, instruction), 900);
+  });
+}
+
+async function refreshSprintSummariesInBackground() {
+  const current = await readBacklogFile();
+  const allSprintItems = new Map<string, BacklogItem[]>();
+  for (const item of current.document.items) {
+    const sprint = item.sprintAssigned.trim();
+    if (!sprint) continue;
+    const bucket = allSprintItems.get(sprint) ?? [];
+    bucket.push(item);
+    allSprintItems.set(sprint, bucket);
+  }
+
+  const config = await readConfig();
+  const cached = config.sprintSummaries[current.path]?.summaries ?? {};
+  const toGenerate: Array<{ sprint: string; tickets: BacklogItem[]; ticketIdHash: string }> = [];
+  const completedSprints: string[] = [];
+
+  for (const [sprint, tickets] of allSprintItems.entries()) {
+    const ticketIdHash = hashTicketIds(tickets.map((ticket) => ticket.id));
+    const existing = cached[sprint];
+    if (existing?.overridden) {
+      if (existing.ticketIdHash !== ticketIdHash) {
+        await updateBacklogSprintSummaries(current.path, (summaries) => ({
+          ...summaries,
+          [sprint]: {
+            ...existing,
+            sprint,
+            ticketIdHash,
+            updatedAt: Date.now(),
+          },
+        }));
+      }
+      completedSprints.push(sprint);
+      continue;
+    }
+    if (existing && existing.ticketIdHash === ticketIdHash && existing.summary.trim()) {
+      completedSprints.push(sprint);
+      continue;
+    }
+    toGenerate.push({ sprint, tickets, ticketIdHash });
+  }
+
+  if (toGenerate.length === 0) {
+    setSprintSummaryTask({
+      status: "completed",
+      message: "Sprint summaries are already current.",
+      completedSprints,
+      failedSprints: [],
+    });
+    return;
+  }
+
+  const generated = await generatePaulaSprintSummaries(current.path, toGenerate.map(({ sprint, tickets }) => ({ sprint, tickets })));
+  const now = Date.now();
+  const failedSprints: string[] = [];
+
+  await updateBacklogSprintSummaries(current.path, (summaries) => {
+    const next = { ...summaries };
+    for (const entry of toGenerate) {
+      const summary = generated.get(entry.sprint)?.trim();
+      if (!summary) {
+        failedSprints.push(entry.sprint);
+        continue;
+      }
+      next[entry.sprint] = {
+        sprint: entry.sprint,
+        summary,
+        suggestedSummary: summary,
+        ticketIdHash: entry.ticketIdHash,
+        overridden: false,
+        updatedAt: now,
+      };
+      completedSprints.push(entry.sprint);
+    }
+    return next;
+  });
+
+  setSprintSummaryTask({
+    status: failedSprints.length ? "failed" : "completed",
+    message: failedSprints.length
+      ? `Saved ${completedSprints.length} sprint summaries. ${failedSprints.join(", ")} did not return a Paula summary.`
+      : `Saved ${completedSprints.length} sprint summaries.`,
+    completedSprints,
+    failedSprints,
+  });
 }
 
 function isUnavailableBacklogError(error: unknown) {
@@ -783,9 +1020,25 @@ app.get("/api/backlog/sprints/summary", async (request, response) => {
     }
 
     const items = current.document.items.filter((item) => item.sprintAssigned === sprint);
+    const ticketIdHash = hashTicketIds(items.map((item) => item.id));
+    const config = await readConfig();
+    const cached = config.sprintSummaries[current.path]?.summaries?.[sprint];
+    if (cached?.summary?.trim()) {
+      response.json(buildSprintSummaryResponse(sprint, cached.summary, {
+        suggestedSummary: cached.suggestedSummary,
+        overridden: cached.overridden,
+        ticketIdHash: cached.ticketIdHash,
+        source: "config",
+        state: cached.summary.trim() ? "ready" : "empty",
+      }));
+      return;
+    }
+
     const summary = generateSprintGoalSummary(sprint, items);
     response.json({
       sprint,
+      ticketIdHash,
+      source: "generated",
       ...summary,
     });
   } catch (error) {
@@ -794,6 +1047,86 @@ app.get("/api/backlog/sprints/summary", async (request, response) => {
       return;
     }
     response.status(500).json({ message: (error as Error).message || "Paula could not generate this sprint summary." });
+  }
+});
+
+app.get("/api/backlog/sprints/summaries/status", (_request, response) => {
+  response.json(sprintSummaryTask);
+});
+
+app.post("/api/backlog/sprints/summaries/refresh", async (_request, response) => {
+  try {
+    if (sprintSummaryTask.status === "running") {
+      response.status(409).json({ message: "Sprint summaries are already being refreshed." });
+      return;
+    }
+    const current = await readBacklogFile();
+    setSprintSummaryTask({
+      startedAt: Date.now(),
+      startedVersion: current.version,
+      message: "Paula is building sprint summaries.",
+      status: "running",
+      completedSprints: [],
+      failedSprints: [],
+    });
+    void refreshSprintSummariesInBackground().catch((error) => {
+      setSprintSummaryTask({
+        status: "failed",
+        message: (error as Error).message || "Paula could not refresh sprint summaries.",
+      });
+    });
+    response.status(202).json({ message: "Paula is building sprint summaries in the background." });
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before refreshing sprint summaries." });
+      return;
+    }
+    response.status(500).json({ message: (error as Error).message || "Paula could not refresh sprint summaries." });
+  }
+});
+
+app.put("/api/backlog/sprints/summary", async (request, response) => {
+  try {
+    const current = await readBacklogFile();
+    const sprint = String(request.body?.sprint ?? "").trim();
+    const summary = String(request.body?.summary ?? "").trim();
+    if (!sprint) {
+      response.status(400).json({ message: "Sprint is required." });
+      return;
+    }
+
+    const items = current.document.items.filter((item) => item.sprintAssigned === sprint);
+    const ticketIdHash = hashTicketIds(items.map((item) => item.id));
+    const config = await readConfig();
+    const existing = config.sprintSummaries[current.path]?.summaries?.[sprint];
+    const suggestedSummary = existing?.suggestedSummary?.trim() || existing?.summary?.trim() || summary;
+    const overridden = summary !== suggestedSummary;
+
+    await updateBacklogSprintSummaries(current.path, (summaries) => ({
+      ...summaries,
+      [sprint]: {
+        sprint,
+        summary,
+        suggestedSummary,
+        ticketIdHash,
+        overridden,
+        updatedAt: Date.now(),
+      },
+    }));
+
+    response.json(buildSprintSummaryResponse(sprint, summary, {
+      suggestedSummary,
+      overridden,
+      ticketIdHash,
+      source: "config",
+      state: summary ? "ready" : "empty",
+    }));
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before editing sprint summaries." });
+      return;
+    }
+    response.status(500).json({ message: (error as Error).message || "Sprint summary could not be saved." });
   }
 });
 

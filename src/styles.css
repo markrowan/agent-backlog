@@ -1524,6 +1524,11 @@ button {
   gap: 8px;
 }
 
+.current-sprint-name-wrap {
+  display: grid;
+  gap: 6px;
+}
+
 .current-sprint-name {
   font-size: clamp(1.25rem, 1.8vw, 1.6rem);
   line-height: 0.95;
@@ -1555,11 +1560,30 @@ button {
   font-size: 1.1rem;
 }
 
+.sprint-summary-refresh-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  border-radius: 12px;
+}
+
 .current-sprint-goal-summary {
   max-width: min(58ch, 100%);
   font-size: 0.92rem;
   line-height: 1.35;
   color: var(--muted);
+}
+
+.current-sprint-goal-summary-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+
+.current-sprint-goal-summary-input {
+  width: min(58ch, 100%);
 }
 
 .current-sprint-goal-summary--ready {
