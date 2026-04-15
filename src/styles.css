@@ -885,10 +885,19 @@ button {
 }
 
 .board-controls {
+  display: grid;
+  gap: 14px;
+}
+
+.board-controls-row {
   display: flex;
   gap: 18px;
   align-items: flex-start;
   flex-wrap: wrap;
+}
+
+.board-controls-row--secondary {
+  justify-content: flex-start;
 }
 
 .board-filters-group {
@@ -913,7 +922,7 @@ button {
     minmax(180px, 240px)
     minmax(160px, 200px)
     fit-content(170px)
-    minmax(240px, 1fr)
+    280px
     fit-content(200px);
   gap: 18px;
   align-items: flex-start;
@@ -938,7 +947,7 @@ button {
 .text-filter-switcher {
   order: 3;
   min-width: 0;
-  width: 100%;
+  width: 280px;
 }
 
 .filter-select-row,
@@ -987,17 +996,18 @@ button {
 
 .lane-visibility-menu summary {
   list-style: none;
-  min-height: 38px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 11px;
-  border-radius: 13px;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: rgba(249, 252, 255, 0.98);
   color: var(--text);
   cursor: pointer;
+  font-size: 0.92rem;
+  line-height: 1;
 }
 
 .lane-visibility-menu summary::-webkit-details-marker {
@@ -1522,6 +1532,11 @@ button {
   color: var(--accent-deep);
 }
 
+.current-sprint-selector-stack {
+  display: grid;
+  gap: 6px;
+}
+
 .current-sprint-selector-row {
   display: inline-flex;
   align-items: center;
@@ -1538,6 +1553,25 @@ button {
   height: 38px;
   border-radius: 12px;
   font-size: 1.1rem;
+}
+
+.current-sprint-goal-summary {
+  max-width: min(58ch, 100%);
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.current-sprint-goal-summary--ready {
+  color: var(--muted);
+}
+
+.current-sprint-goal-summary--empty {
+  color: color-mix(in srgb, var(--muted) 88%, white);
+}
+
+.current-sprint-goal-summary--failed {
+  color: #9a3412;
 }
 
 .current-sprint-header h2 {
@@ -1727,11 +1761,18 @@ button {
 .lane-hide-button {
   width: 28px;
   height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--accent-deep);
+  box-shadow: none;
 }
 
 .lane-hide-button svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.9;
 }
 
 .lane-header-title {
@@ -2040,11 +2081,6 @@ button {
   border-color: var(--line-strong);
 }
 
-.traceability-preview {
-  margin-top: 4px;
-  justify-content: flex-start;
-}
-
 .editor-title-row {
   display: flex;
   align-items: flex-start;
@@ -2052,8 +2088,33 @@ button {
 }
 
 .editor-traceability-actions {
-  padding-top: 4px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
   flex-shrink: 0;
+}
+
+.editor-actions .traceability-icon-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.editor-actions .traceability-icon-button:hover {
+  transform: translateY(-1px);
+  color: var(--accent-deep);
+  border-color: var(--line-strong);
+  box-shadow: 0 14px 26px rgba(15, 23, 42, 0.1);
+}
+
+.editor-actions .traceability-icon-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .story-blocked-chip {

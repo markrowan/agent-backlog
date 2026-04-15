@@ -40,6 +40,9 @@ export interface BacklogItem {
   scopeNotes: string;
   acceptanceCriteria: string[];
   dependencies: string;
+  blocked: string;
+  gitCommit: string;
+  gitPrUrl: string;
   links: string;
   implementationNotes: string;
   traceability?: {
