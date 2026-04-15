@@ -178,7 +178,13 @@ function closeActiveTerminalSession() {
 }
 
 function submitTerminalInput(process: IPty, text: string) {
-  process.write(text);
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  process.write("\u001b[200~");
+  const chunkSize = 1024;
+  for (let index = 0; index < normalized.length; index += chunkSize) {
+    process.write(normalized.slice(index, index + chunkSize));
+  }
+  process.write("\u001b[201~");
   globalThis.setTimeout(() => {
     process.write("\r");
   }, 24);

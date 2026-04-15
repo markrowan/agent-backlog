@@ -8,6 +8,7 @@ interface AgentTerminalProps {
   configVersion?: number;
   filterContext?: string;
   intakeContext?: string;
+  externalSubmission?: { id: number; text: string } | null;
   onStatusChange?: (status: string | null) => void;
   onSessionPathChange?: (path: string | null) => void;
   onIntakeContextConsumed?: () => void;
@@ -110,7 +111,7 @@ function shouldShowTerminal(line: string) {
   );
 }
 
-export default function AgentTerminal({ agentCommand, backlogPath, configVersion, filterContext, intakeContext, onStatusChange, onSessionPathChange, onIntakeContextConsumed }: AgentTerminalProps) {
+export default function AgentTerminal({ agentCommand, backlogPath, configVersion, filterContext, intakeContext, externalSubmission, onStatusChange, onSessionPathChange, onIntakeContextConsumed }: AgentTerminalProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -129,6 +130,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   const pendingUserEchoesRef = useRef<string[]>([]);
   const outboundQueueRef = useRef<string[]>([]);
   const previousTypingStateRef = useRef(false);
+  const lastExternalSubmissionIdRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -332,29 +334,40 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     }
   }
 
-  function sendChatMessage() {
-    const message = sanitizeUserChatMessage(draft);
-    if (!message) {
-      setDraft("");
+  function dispatchChatMessage(message: string, options?: { preserveDraft?: boolean; forceQueue?: boolean }) {
+    const normalizedMessage = sanitizeUserChatMessage(message);
+    if (!normalizedMessage) {
+      if (!options?.preserveDraft) {
+        setDraft("");
+      }
+      return;
+    }
+
+    if (options?.forceQueue || isAgentTyping) {
+      setQueuedCommands((current) => [...current, normalizedMessage]);
+      if (!options?.preserveDraft) {
+        setDraft("");
+      }
+      onStatusChange?.(`Queued Paula command: ${normalizedMessage}`);
       return;
     }
 
     const deferredContext = pendingFilterContextRef.current?.trim();
     const intakeContextText = pendingIntakeContextRef.current?.trim();
-    const submittedMessage = [intakeContextText, deferredContext, `User request: ${message}`].filter(Boolean).join("\n\n") || message;
+    const submittedMessage = [intakeContextText, deferredContext, `User request: ${normalizedMessage}`].filter(Boolean).join("\n\n") || normalizedMessage;
 
     flushAssistantBuffer();
-    appendMessage("user", message);
-    pendingUserEchoesRef.current.push(message);
-    pendingUserEchoesRef.current.push(`User request: ${message}`);
+    appendMessage("user", normalizedMessage);
+    pendingUserEchoesRef.current.push(normalizedMessage);
+    pendingUserEchoesRef.current.push(`User request: ${normalizedMessage}`);
     pendingUserEchoesRef.current.push(submittedMessage);
     if (intakeContextText) {
       pendingUserEchoesRef.current.push(intakeContextText);
-      pendingUserEchoesRef.current.push(`${intakeContextText}\n\nUser request: ${message}`);
+      pendingUserEchoesRef.current.push(`${intakeContextText}\n\nUser request: ${normalizedMessage}`);
     }
     if (deferredContext) {
       pendingUserEchoesRef.current.push(deferredContext);
-      pendingUserEchoesRef.current.push(`${deferredContext}\n\nUser request: ${message}`);
+      pendingUserEchoesRef.current.push(`${deferredContext}\n\nUser request: ${normalizedMessage}`);
     }
     submitInput(submittedMessage);
     pendingFilterContextRef.current = null;
@@ -363,18 +376,13 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       onStatusChange?.("Inbox intake sent with hidden new-story context.");
       onIntakeContextConsumed?.();
     }
-    setDraft("");
+    if (!options?.preserveDraft) {
+      setDraft("");
+    }
   }
 
-  function queueChatCommand() {
-    const command = sanitizeUserChatMessage(draft);
-    if (!command) {
-      return;
-    }
-
-    setQueuedCommands((current) => [...current, command]);
-    setDraft("");
-    onStatusChange?.(`Queued Paula command: ${command}`);
+  function sendChatMessage() {
+    dispatchChatMessage(draft);
   }
 
   function sendQueuedCommand(index: number) {
@@ -383,11 +391,8 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
       return;
     }
 
-    flushAssistantBuffer();
-    appendMessage("user", command);
-    pendingUserEchoesRef.current.push(command);
-    submitInput(command);
     setQueuedCommands((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    dispatchChatMessage(command, { preserveDraft: true });
     onStatusChange?.(`Sent queued Paula command: ${command}`);
   }
 
@@ -412,6 +417,14 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
 
     sendQueuedCommand(0);
   }, [activeTab, isAgentTyping, queuedCommands]);
+
+  useEffect(() => {
+    if (!externalSubmission || !externalSubmission.text.trim()) return;
+    if (lastExternalSubmissionIdRef.current === externalSubmission.id) return;
+    lastExternalSubmissionIdRef.current = externalSubmission.id;
+    setActiveTab("chat");
+    dispatchChatMessage(externalSubmission.text);
+  }, [externalSubmission]);
 
   useEffect(() => {
     if (!backlogPath) {
@@ -728,12 +741,12 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
             <div className="agent-chat-action-stack">
               {queuedCommands.length > 0 ? (
                 <div className="agent-command-queue" aria-label="Queued Paula commands">
-                  <div className="agent-command-queue__label">Queued message</div>
+                  <div className="agent-command-queue__label">Queued message{queuedCommands.length > 1 ? "s" : ""}</div>
                   {queuedCommands.map((command, index) => (
                     <div key={`${command}-${index}`} className="agent-command-pill">
                       <span>{command}</span>
-                      <button type="button" onClick={() => sendQueuedCommand(index)}>
-                        Send
+                      <button type="button" className="agent-command-pill__send" onClick={() => sendQueuedCommand(index)} title="Send now" aria-label="Send queued message now">
+                        ↗
                       </button>
                     </div>
                   ))}
@@ -750,10 +763,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
                 >
                   {undoBusy ? "Undoing…" : "Undo"}
                 </button>
-                <button type="button" className="secondary-button" onClick={queueChatCommand} disabled={!draft.trim()}>
-                  Queue
-                </button>
-                <button type="button" className="primary-button" onClick={sendChatMessage}>
+                <button type="button" className="primary-button" onClick={sendChatMessage} disabled={!draft.trim()}>
                   Send
                 </button>
               </div>
