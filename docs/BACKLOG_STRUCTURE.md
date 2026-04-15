@@ -46,6 +46,9 @@ Every story must include these fields exactly:
 - `Scope notes`
 - `Acceptance criteria`
 - `Dependencies`
+- `Blocked`
+- `Git commit`
+- `Git PR URL`
 - `Links`
 - `Implementation notes`
 
@@ -120,6 +123,9 @@ Use for completed items with outcome notes.
 - Acceptance criteria:
   - [ ] Specific observable outcome
 - Dependencies: Systems, approvals, or blocking tickets
+- Blocked: Current blocker in plain language, otherwise blank
+- Git commit: Commit SHA, ref, or commit URL when delivery exists, otherwise blank
+- Git PR URL: Pull request URL when one exists, otherwise blank
 - Links: Issue, PR, docs, chat thread, artifacts
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 ```

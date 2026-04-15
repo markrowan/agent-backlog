@@ -18,6 +18,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import pty, { type IPty } from "node-pty";
 import {
   createBacklogInFolder,
+  generateSprintGoalSummary,
   getBacklogFile,
   nextBacklogId,
   readBacklogFile,
@@ -490,6 +491,9 @@ function normalizeItem(payload: Partial<BacklogItem>, existingIds: string[]): Ba
     scopeNotes: payload.scopeNotes?.trim() || "",
     acceptanceCriteria: (payload.acceptanceCriteria ?? []).map((item) => item.trim()).filter(Boolean),
     dependencies: payload.dependencies?.trim() || "",
+    blocked: payload.blocked?.trim() || "",
+    gitCommit: payload.gitCommit?.trim() || "",
+    gitPrUrl: payload.gitPrUrl?.trim() || "",
     links: payload.links?.trim() || "",
     implementationNotes: payload.implementationNotes?.trim() || "",
   };
@@ -766,6 +770,30 @@ app.post("/api/backlog/sprints/clear", async (request, response) => {
       return;
     }
     response.status(500).json({ message: (error as Error).message });
+  }
+});
+
+app.get("/api/backlog/sprints/summary", async (request, response) => {
+  try {
+    const current = await readBacklogFile();
+    const sprint = String(request.query.sprint ?? "").trim();
+    if (!sprint) {
+      response.status(400).json({ message: "Sprint is required." });
+      return;
+    }
+
+    const items = current.document.items.filter((item) => item.sprintAssigned === sprint);
+    const summary = generateSprintGoalSummary(sprint, items);
+    response.json({
+      sprint,
+      ...summary,
+    });
+  } catch (error) {
+    if ((error as Error & { code?: string }).code === "NO_BACKLOG_LOADED") {
+      response.status(400).json({ message: "Open a backlog file before viewing sprint summaries." });
+      return;
+    }
+    response.status(500).json({ message: (error as Error).message || "Paula could not generate this sprint summary." });
   }
 });
 

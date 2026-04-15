@@ -70,6 +70,9 @@ Use for completed items with outcome notes.
 - Acceptance criteria:
   - [ ] Specific observable outcome
 - Dependencies: Systems, approvals, or blocking tickets
+- Blocked: Current blocker in plain language, otherwise blank
+- Git commit: Commit SHA, ref, or commit URL when delivery exists, otherwise blank
+- Git PR URL: Pull request URL when one exists, otherwise blank
 - Links: Issue, PR, docs, chat thread, artifacts
 - Implementation notes: Leave blank until the item is Ready or in execution
 \`\`\`
@@ -137,7 +140,21 @@ function resolveGitUrl(reference: string, source: "branch" | "commit" | "unknown
   return remote;
 }
 
-function parseTraceability(rawLinks: string) {
+function parseTraceability(rawLinks: string, gitCommit = "") {
+  const explicitCommit = gitCommit.trim();
+  if (explicitCommit) {
+    if (/^https?:\/\/\S+$/i.test(explicitCommit)) {
+      return {
+        gitUrl: explicitCommit,
+        status: "linked" as const,
+        source: "commit" as const,
+        reference: explicitCommit,
+      };
+    }
+    const source = (/^[0-9a-f]{7,40}$/i.test(explicitCommit) ? "commit" : "branch") as "commit" | "branch";
+    const gitUrl = resolveGitUrl(explicitCommit, source);
+    return { gitUrl, status: gitUrl ? ("linked" as const) : ("pending" as const), source, reference: explicitCommit };
+  }
   const lines = rawLinks.split(/\r?\n/);
   for (const line of lines) {
     const match = line.match(/^\s*(git|branch|commit)\s*[:=-]\s*(\S.*)$/i);
@@ -173,8 +190,8 @@ function toItem(blockLines: string[], epic: string): BacklogItem | null {
       acceptanceCriteria.push(line.replace("  - [ ] ", "").trim());
     }
   }
-
   const links = fields.get("Links") ?? "";
+  const gitCommit = fields.get("Git commit") ?? fields.get("Git Commit") ?? "";
   return {
     id: heading[1],
     title: heading[2].trim(),
@@ -199,9 +216,12 @@ function toItem(blockLines: string[], epic: string): BacklogItem | null {
     scopeNotes: fields.get("Scope notes") ?? "",
     acceptanceCriteria,
     dependencies: fields.get("Dependencies") ?? "",
+    blocked: fields.get("Blocked") ?? "",
+    gitCommit,
+    gitPrUrl: fields.get("Git PR URL") ?? "",
     links,
     implementationNotes: fields.get("Implementation notes") ?? "",
-    traceability: parseTraceability(links),
+    traceability: parseTraceability(links, gitCommit),
   };
 }
 
@@ -325,6 +345,9 @@ function formatItem(item: BacklogItem): string {
     `- Acceptance criteria:`,
     acceptance,
     `- Dependencies: ${item.dependencies}`,
+    `- Blocked: ${item.blocked}`,
+    `- Git commit: ${item.gitCommit}`,
+    `- Git PR URL: ${item.gitPrUrl}`,
     `- Links: ${item.links}`,
     `- Implementation notes: ${item.implementationNotes}`,
   ].join("\n");
@@ -420,6 +443,9 @@ Use for completed items with outcome notes.
 - Acceptance criteria:
   - [ ] Specific observable outcome
 - Dependencies: Systems, approvals, or blocking tickets
+- Blocked: Current blocker in plain language, otherwise blank
+- Git commit: Commit SHA, ref, or commit URL when delivery exists, otherwise blank
+- Git PR URL: Pull request URL when one exists, otherwise blank
 - Links: Issue, PR, docs, chat thread, artifacts
 - Implementation notes: Leave blank until the item is \`Ready\` or in execution
 \`\`\`
@@ -547,5 +573,121 @@ export async function restorePreviousBacklogVersion() {
     displayName: path.basename(filePath),
     version: stat.mtimeMs,
     document: parseBacklog(backupRaw),
+  };
+}
+
+const SPRINT_SUMMARY_STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "beside", "by", "for", "from", "if", "in", "into", "is", "it", "its",
+  "of", "on", "or", "so", "that", "the", "their", "this", "to", "up", "with", "when", "while", "without",
+  "story", "stories", "ticket", "tickets", "backlog", "sprint", "paula", "user", "users", "current", "selected",
+  "selector", "summary", "line", "plain", "language", "show", "shows", "showing", "add", "adds", "added", "make",
+  "makes", "making", "keep", "keeps", "keeping", "fix", "fixes", "fixed", "support", "supports", "supporting",
+  "update", "updates", "updating", "visible", "calm", "clear", "meaningful",
+]);
+
+function sentenceCase(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function normaliseSprintPhrase(value: string) {
+  return value
+    .replace(/BACKLOG-\d+/gi, "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(add|build|create|display|explain|fix|improve|keep|make|render|show|support|update)\b/gi, " ")
+    .replace(/[^a-z0-9\s/-]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function phraseKeywords(value: string) {
+  return normaliseSprintPhrase(value)
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => part.replace(/^[-/]+|[-/]+$/g, ""))
+    .filter((part) => part.length >= 3 && !SPRINT_SUMMARY_STOP_WORDS.has(part));
+}
+
+function topSprintThemes(items: BacklogItem[]) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const weightedTexts: Array<[string, number]> = [
+      [item.title, 3],
+      [item.summary, 3],
+      [item.outcome, 2],
+      [item.scopeNotes, 1],
+      [item.epic, 1],
+    ];
+
+    for (const [text, weight] of weightedTexts) {
+      for (const keyword of phraseKeywords(text)) {
+        counts.set(keyword, (counts.get(keyword) ?? 0) + weight);
+      }
+    }
+  }
+
+  return Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 4)
+    .map(([keyword]) => keyword.replace(/-/g, " "));
+}
+
+function compactItemPhrase(item: BacklogItem) {
+  const source = item.summary.trim() || item.outcome.trim() || item.title.trim();
+  const normalised = normaliseSprintPhrase(source);
+  if (!normalised) return "";
+  const words = normalised.split(/\s+/).slice(0, 8);
+  return words.join(" ").trim();
+}
+
+export function generateSprintGoalSummary(sprint: string, items: BacklogItem[]) {
+  const sprintName = sprint.trim();
+  if (!sprintName) {
+    return {
+      state: "empty" as const,
+      summary: "Pick a sprint to see its goal summary.",
+    };
+  }
+
+  if (items.length === 0) {
+    return {
+      state: "empty" as const,
+      summary: "No work is assigned to this sprint yet.",
+    };
+  }
+
+  const nonDoneItems = items.filter((item) => item.status !== "Done");
+  const activeItems = nonDoneItems.length > 0 ? nonDoneItems : items;
+  const themes = topSprintThemes(activeItems);
+  const leadPhrase = compactItemPhrase(activeItems[0]);
+
+  if (!leadPhrase && themes.length === 0) {
+    return {
+      state: "empty" as const,
+      summary: "This sprint has work assigned, but its goal is not clear enough to summarise yet.",
+    };
+  }
+
+  if (activeItems.length === 1) {
+    return {
+      state: "ready" as const,
+      summary: sentenceCase(`Focus: ${leadPhrase || themes[0]}.`),
+    };
+  }
+
+  if (themes.length >= 2) {
+    const themeList = themes.length >= 3
+      ? `${themes[0]}, ${themes[1]}, and ${themes[2]}`
+      : `${themes[0]} and ${themes[1]}`;
+    return {
+      state: "ready" as const,
+      summary: sentenceCase(`Focus: ${themeList}${activeItems.length > 3 ? ` across ${activeItems.length} stories` : ""}.`),
+    };
+  }
+
+  return {
+    state: "ready" as const,
+    summary: sentenceCase(`Focus: ${leadPhrase}.`),
   };
 }

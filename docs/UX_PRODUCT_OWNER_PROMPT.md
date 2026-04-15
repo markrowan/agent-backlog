@@ -70,6 +70,9 @@ Every story must include these fields exactly:
 - `- Acceptance criteria:`
 - `  - [ ] ...`
 - `- Dependencies: ...`
+- `- Blocked: ...`
+- `- Git commit: ...`
+- `- Git PR URL: ...`
 - `- Links: ...`
 - `- Implementation notes: ...`
 

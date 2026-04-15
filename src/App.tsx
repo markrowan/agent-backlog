@@ -34,6 +34,9 @@ const EMPTY_ITEM: BacklogItem = {
   scopeNotes: "",
   acceptanceCriteria: [""],
   dependencies: "",
+  blocked: "",
+  gitCommit: "",
+  gitPrUrl: "",
   links: "",
   implementationNotes: "",
 };
@@ -59,9 +62,10 @@ const STATUS_ORDER: Record<BacklogItem["status"], number> = {
   Grooming: 1,
   Ready: 2,
   "In Progress": 3,
-  Testing: 4,
-  Review: 5,
-  Done: 6,
+  Blocked: 4,
+  Testing: 5,
+  Review: 6,
+  Done: 7,
 };
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -153,6 +157,12 @@ interface AutoSprintTaskStatus {
   sprint: string;
   startedAt: number;
   status: "idle" | "running" | "completed" | "failed";
+}
+
+interface SprintGoalSummary {
+  sprint: string;
+  state: "ready" | "empty" | "failed";
+  summary: string;
 }
 
 type DragSource = "board" | "sprint";
@@ -404,8 +414,11 @@ function quickEditValue(item: BacklogItem, field: QuickEditField) {
   return item.dueDate;
 }
 
-function parseTraceabilityLinks(rawLinks: string) {
-  const urls = { git: "", pr: "" };
+function parseTraceabilityLinks(rawLinks: string, gitCommit = "", gitPrUrl = "") {
+  const urls = {
+    git: /^https?:\/\/\S+$/i.test(gitCommit.trim()) ? gitCommit.trim() : "",
+    pr: /^https?:\/\/\S+$/i.test(gitPrUrl.trim()) ? gitPrUrl.trim() : "",
+  };
   const lines = rawLinks.split(/\r?\n/);
 
   for (const line of lines) {
@@ -425,11 +438,19 @@ function parseTraceabilityLinks(rawLinks: string) {
 }
 
 function getItemTraceabilityUrls(item: BacklogItem) {
-  const parsed = parseTraceabilityLinks(item.links);
+  const parsed = parseTraceabilityLinks(item.links, item.gitCommit, item.gitPrUrl);
   return {
     git: item.traceability?.status === "linked" && item.traceability.gitUrl ? item.traceability.gitUrl : parsed.git,
     pr: parsed.pr,
   };
+}
+
+function getEditorTraceabilityUrls(item: BacklogItem) {
+  return parseTraceabilityLinks("", item.gitCommit, item.gitPrUrl);
+}
+
+function blockedTooltip(item: BacklogItem) {
+  return item.blocked.trim() || "Blocked";
 }
 
 function saveIcon() {
@@ -555,6 +576,9 @@ function itemMatchesTextFilter(item: BacklogItem, query: string) {
     item.scopeNotes,
     ...item.acceptanceCriteria,
     item.dependencies,
+    item.blocked,
+    item.gitCommit,
+    item.gitPrUrl,
     item.links,
     item.implementationNotes,
   ]
@@ -585,6 +609,7 @@ function App() {
   const [autoSprintScope, setAutoSprintScope] = useState<"filtered" | "all">("filtered");
   const [autoSprintProposal, setAutoSprintProposal] = useState<null | { selected: string[]; excluded: Array<{ id: string; reason: string }>; used: number; cap: number; sprint: string }>(null);
   const [autoSprintTaskStatus, setAutoSprintTaskStatus] = useState<AutoSprintTaskStatus | null>(null);
+  const [sprintGoalSummary, setSprintGoalSummary] = useState<SprintGoalSummary | null>(null);
   const [isAutoGroomStarting, setIsAutoGroomStarting] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortKey[]>([...DEFAULT_SORT_ORDER]);
   const [sortDirections, setSortDirections] = useState<Record<SortKey, SortDirection>>({ ...DEFAULT_SORT_DIRECTIONS });
@@ -1174,6 +1199,48 @@ function App() {
     if (!currentSprintSelection.trim()) return [];
     return data.document.items.filter((item) => item.sprintAssigned === currentSprintSelection);
   }, [currentSprintSelection, data]);
+
+  useEffect(() => {
+    if (!data || !currentSprintSelection.trim()) {
+      setSprintGoalSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    setSprintGoalSummary({
+      sprint: currentSprintSelection,
+      state: "ready",
+      summary: "Paula is reading this sprint...",
+    });
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/backlog/sprints/summary?sprint=${encodeURIComponent(currentSprintSelection)}`);
+        const payload = (await response.json().catch(() => null)) as SprintGoalSummary | { message?: string } | null;
+        if (cancelled) return;
+        if (!response.ok) {
+          setSprintGoalSummary({
+            sprint: currentSprintSelection,
+            state: "failed",
+            summary: (payload as { message?: string } | null)?.message ?? "Paula could not generate this sprint summary.",
+          });
+          return;
+        }
+        setSprintGoalSummary(payload as SprintGoalSummary);
+      } catch {
+        if (cancelled) return;
+        setSprintGoalSummary({
+          sprint: currentSprintSelection,
+          state: "failed",
+          summary: "Paula could not generate this sprint summary right now.",
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSprintSelection, data?.path, data?.version]);
 
   useEffect(() => {
     if (selectedStatus === ALL_STATUSES) {
@@ -2663,31 +2730,36 @@ function App() {
               <span className="current-sprint-heading">
                 <span className="eyebrow">Current Sprint</span>
                 {!currentSprintCollapsed ? (
-                  <span className="current-sprint-selector-row">
-                    <select
-                      value={currentSprintSelection}
-                      onChange={(event) => setCurrentSprintTarget(event.target.value)}
-                      aria-label="Current sprint"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      {(availableSprintTargets.length ? availableSprintTargets : ["Sprint 1"]).map((sprint) => (
-                        <option key={sprint} value={sprint}>
-                          {sprint}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="epic-add-button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openFilterCreator("sprint", event);
-                      }}
-                      aria-label="Create sprint"
-                      title="Create sprint"
-                    >
-                      +
-                    </button>
+                  <span className="current-sprint-selector-stack">
+                    <span className="current-sprint-selector-row">
+                      <select
+                        value={currentSprintSelection}
+                        onChange={(event) => setCurrentSprintTarget(event.target.value)}
+                        aria-label="Current sprint"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {(availableSprintTargets.length ? availableSprintTargets : ["Sprint 1"]).map((sprint) => (
+                          <option key={sprint} value={sprint}>
+                            {sprint}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="epic-add-button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openFilterCreator("sprint", event);
+                        }}
+                        aria-label="Create sprint"
+                        title="Create sprint"
+                      >
+                        +
+                      </button>
+                    </span>
+                    <span className={`current-sprint-goal-summary current-sprint-goal-summary--${sprintGoalSummary?.state ?? "empty"}`}>
+                      {sprintGoalSummary?.summary ?? "Pick a sprint to see its goal summary."}
+                    </span>
                   </span>
                 ) : (
                   <span className="current-sprint-name">{currentSprintSelection}</span>
@@ -2808,7 +2880,7 @@ function App() {
                     <button type="button" className="story-summary-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "summary", event)}>{item.summary || "Add summary"}</button>
                     <div className="story-meta-line">
                       <button type="button" className="story-pill story-pill--owner quick-edit-trigger" onClick={(event) => openQuickEditor(item, "owner", event)}>{item.owner}</button>
-                      <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)}>{item.status}</button>
+                      <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)} title={item.status === "Blocked" ? blockedTooltip(item) : undefined}>{item.status}</button>
                       <span className="story-sprint-chip-group">
                         <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
                         {!item.sprintAssigned.trim() && item.status !== "Done" && hasValidCurrentSprint ? (
@@ -2829,7 +2901,7 @@ function App() {
                       <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
                       <div className="story-card-footer-chips">
                         {(() => { const traceability = getItemTraceabilityUrls(item); return <TraceabilityActions gitUrl={traceability.git} prUrl={traceability.pr} />; })()}
-                        {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
+                        {item.status === "Blocked" ? <span className="story-blocked-chip" title={blockedTooltip(item)}>Blocked</span> : null}
                         {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
                         {item.status !== "Blocked" && item.status !== "Done" && item.sprintAssigned.trim() ? <span className="story-planned-chip">Planned</span> : null}
                       </div>
@@ -2894,197 +2966,201 @@ function App() {
 
       <section className="epic-filter-strip">
         <div className="board-controls">
-          <div className="board-filters-group">
-            <div className="clear-filters-control">
-              <span className="meta-label clear-filters-control__title" aria-hidden="true">&nbsp;</span>
-              <button
-                type="button"
-                className="clear-filters-button"
-                onClick={clearFilters}
-                disabled={selectedEpic === "All epics" && selectedOwner === "All owners" && selectedSprint === ALL_SPRINTS && selectedStatus === ALL_STATUSES && !textFilter}
-              >
-                <span className="clear-filters-button__icon" aria-hidden="true">{closeIcon()}</span>
-                <span className="clear-filters-button__label">Reset</span>
-              </button>
-            </div>
-            <div className="filter-switchers">
-              <label className="epic-switcher">
-                <span className="meta-label">Epic</span>
-                <div className="filter-select-row">
-                  <select
-                    value={selectedEpic}
-                    onChange={(event) => setSelectedEpic(event.target.value)}
-                  >
-                    {epicOptions.map((epic) => (
-                      <option key={epic} value={epic}>
-                        {epicOptionLabels.get(epic) ?? epic}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="epic-add-button"
-                    onClick={(event) => openFilterCreator("epic", event)}
-                    aria-label="Create epic filter"
-                  >
-                    +
-                  </button>
-                </div>
-              </label>
-              <label className="epic-switcher owner-switcher">
-                <span className="meta-label">Owner</span>
-                <div className="filter-select-row">
-                  <select
-                    value={selectedOwner}
-                    onChange={(event) => setSelectedOwner(event.target.value)}
-                  >
-                    {ownerOptions.map((owner) => (
-                      <option key={owner} value={owner}>
-                        {ownerOptionLabels.get(owner) ?? owner}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="epic-add-button"
-                    onClick={(event) => openFilterCreator("owner", event)}
-                    aria-label="Create owner filter"
-                  >
-                    +
-                  </button>
-                </div>
-              </label>
-              <label className="epic-switcher status-switcher">
-                <span className="meta-label">Status</span>
-                <div className="filter-select-row">
-                  <select
-                    value={selectedStatus}
-                    onChange={(event) => setSelectedStatus(event.target.value)}
-                  >
-                    {[ALL_STATUSES, ...STATUSES].map((status) => (
-                      <option key={status} value={status}>
-                        {statusOptionLabels.get(status) ?? status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </label>
-              <label className="epic-switcher sprint-switcher">
-                <span className="meta-label">Sprint</span>
-                <div className="filter-select-row sprint-select-row">
-                  <select
-                    value={selectedSprint}
-                    onChange={(event) => setSelectedSprint(event.target.value)}
-                  >
-                    {sprintOptions.map((sprint) => (
-                      <option key={sprint} value={sprint}>
-                        {sprintOptionLabels.get(sprint) ?? sprint}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="epic-add-button"
-                    onClick={(event) => openFilterCreator("sprint", event)}
-                    aria-label="Create sprint"
-                  >
-                    +
-                  </button>
-                </div>
-              </label>
-              <label className="epic-switcher text-filter-switcher">
-                <span className="meta-label">Text</span>
-                <div className="filter-text-row">
-                  <input
-                    type="text"
-                    value={textFilter}
-                    onChange={(event) => setTextFilter(event.target.value)}
-                    placeholder="Filter tickets"
-                    aria-label="Text filter"
-                  />
-                  <button
-                    type="button"
-                    className="icon-button text-filter-clear"
-                    aria-label="Clear text filter"
-                    title="Clear"
-                    disabled={!textFilter}
-                    onClick={() => setTextFilter("")}
-                  >
-                    {closeIcon()}
-                  </button>
-                </div>
-              </label>
-              <div className="epic-switcher lane-visibility-switcher">
-                <span className="meta-label">Lanes</span>
-                <details className="lane-visibility-menu">
-                  <summary>
-                    <span>Lane visibility</span>
-                    <ChevronDown aria-hidden="true" strokeWidth={1.9} />
-                  </summary>
-                  <div className="lane-visibility-menu__panel">
-                    {laneVisibilityStatuses.map((status) => {
-                      const checked = !hiddenStatuses.includes(status);
-                      const isLastVisible = checked && !canHideAnotherLane;
-                      return (
-                        <label key={status} className={`lane-visibility-option ${isLastVisible ? "is-disabled" : ""}`}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={isLastVisible}
-                            onChange={(event) => toggleLaneVisibility(status, event.target.checked)}
-                          />
-                          <span>{status}</span>
-                        </label>
-                      );
-                    })}
+          <div className="board-controls-row board-controls-row--filters">
+            <div className="board-filters-group">
+              <div className="clear-filters-control">
+                <span className="meta-label clear-filters-control__title" aria-hidden="true">&nbsp;</span>
+                <button
+                  type="button"
+                  className="clear-filters-button"
+                  onClick={clearFilters}
+                  disabled={selectedEpic === "All epics" && selectedOwner === "All owners" && selectedSprint === ALL_SPRINTS && selectedStatus === ALL_STATUSES && !textFilter}
+                >
+                  <span className="clear-filters-button__icon" aria-hidden="true">{closeIcon()}</span>
+                  <span className="clear-filters-button__label">Reset</span>
+                </button>
+              </div>
+              <div className="filter-switchers">
+                <label className="epic-switcher">
+                  <span className="meta-label">Epic</span>
+                  <div className="filter-select-row">
+                    <select
+                      value={selectedEpic}
+                      onChange={(event) => setSelectedEpic(event.target.value)}
+                    >
+                      {epicOptions.map((epic) => (
+                        <option key={epic} value={epic}>
+                          {epicOptionLabels.get(epic) ?? epic}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="epic-add-button"
+                      onClick={(event) => openFilterCreator("epic", event)}
+                      aria-label="Create epic filter"
+                    >
+                      +
+                    </button>
                   </div>
-                </details>
+                </label>
+                <label className="epic-switcher owner-switcher">
+                  <span className="meta-label">Owner</span>
+                  <div className="filter-select-row">
+                    <select
+                      value={selectedOwner}
+                      onChange={(event) => setSelectedOwner(event.target.value)}
+                    >
+                      {ownerOptions.map((owner) => (
+                        <option key={owner} value={owner}>
+                          {ownerOptionLabels.get(owner) ?? owner}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="epic-add-button"
+                      onClick={(event) => openFilterCreator("owner", event)}
+                      aria-label="Create owner filter"
+                    >
+                      +
+                    </button>
+                  </div>
+                </label>
+                <label className="epic-switcher status-switcher">
+                  <span className="meta-label">Status</span>
+                  <div className="filter-select-row">
+                    <select
+                      value={selectedStatus}
+                      onChange={(event) => setSelectedStatus(event.target.value)}
+                    >
+                      {[ALL_STATUSES, ...STATUSES].map((status) => (
+                        <option key={status} value={status}>
+                          {statusOptionLabels.get(status) ?? status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </label>
+                <label className="epic-switcher sprint-switcher">
+                  <span className="meta-label">Sprint</span>
+                  <div className="filter-select-row sprint-select-row">
+                    <select
+                      value={selectedSprint}
+                      onChange={(event) => setSelectedSprint(event.target.value)}
+                    >
+                      {sprintOptions.map((sprint) => (
+                        <option key={sprint} value={sprint}>
+                          {sprintOptionLabels.get(sprint) ?? sprint}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="epic-add-button"
+                      onClick={(event) => openFilterCreator("sprint", event)}
+                      aria-label="Create sprint"
+                    >
+                      +
+                    </button>
+                  </div>
+                </label>
+                <label className="epic-switcher text-filter-switcher">
+                  <span className="meta-label">Text</span>
+                  <div className="filter-text-row">
+                    <input
+                      type="text"
+                      value={textFilter}
+                      onChange={(event) => setTextFilter(event.target.value)}
+                      placeholder="Filter tickets"
+                      aria-label="Text filter"
+                    />
+                    <button
+                      type="button"
+                      className="icon-button text-filter-clear"
+                      aria-label="Clear text filter"
+                      title="Clear"
+                      disabled={!textFilter}
+                      onClick={() => setTextFilter("")}
+                    >
+                      {closeIcon()}
+                    </button>
+                  </div>
+                </label>
               </div>
             </div>
           </div>
-          <div className="sort-switcher">
-            <span className="meta-label">Sort</span>
-            <div className="sort-pill-row">
-              {sortOrder.map((key) => (
-                <div key={key} className={`sort-pill-group ${sortChipClass(key)}`}>
-                  <button
-                    type="button"
-                    className={`sort-pill sort-pill--${key}`}
-                    draggable
-                    onDragStart={() => setDraggingSortKey(key)}
-                    onDragEnd={() => {
-                      setDraggingSortKey(null);
-                      setDragOverSortKey(null);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      if (draggingSortKey && draggingSortKey !== key) {
-                        setDragOverSortKey(key);
-                      }
-                    }}
-                    onDrop={() => {
-                      if (draggingSortKey && draggingSortKey !== key) {
-                        reorderSortKeys(draggingSortKey, key);
-                      }
-                      setDraggingSortKey(null);
-                      setDragOverSortKey(null);
-                    }}
-                    title="Drag to reorder sort priority"
-                  >
-                    <span className="sort-pill-handle">::</span>
-                    {SORT_LABELS[key]}
-                  </button>
-                  <button
-                    type="button"
-                    className={`sort-direction-button sort-direction-button--${key}`}
-                    onClick={() => toggleSortDirection(key)}
-                    aria-label={`Sort ${SORT_LABELS[key]} ${sortDirections[key] === "asc" ? "descending" : "ascending"}`}
-                    title={`Currently ${sortDirections[key] === "asc" ? "ascending" : "descending"}`}
-                  >
-                    <span aria-hidden="true">{sortDirections[key] === "asc" ? "▴" : "▾"}</span>
-                  </button>
+          <div className="board-controls-row board-controls-row--secondary">
+            <div className="epic-switcher lane-visibility-switcher">
+              <span className="meta-label">Lanes</span>
+              <details className="lane-visibility-menu">
+                <summary>
+                  <span>{`Lanes: ${visibleLaneStatuses.length} shown`}</span>
+                  <ChevronDown aria-hidden="true" strokeWidth={1.9} />
+                </summary>
+                <div className="lane-visibility-menu__panel">
+                  {laneVisibilityStatuses.map((status) => {
+                    const checked = !hiddenStatuses.includes(status);
+                    const isLastVisible = checked && !canHideAnotherLane;
+                    return (
+                      <label key={status} className={`lane-visibility-option ${isLastVisible ? "is-disabled" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isLastVisible}
+                          onChange={(event) => toggleLaneVisibility(status, event.target.checked)}
+                        />
+                        <span>{status}</span>
+                      </label>
+                    );
+                  })}
                 </div>
-              ))}
+              </details>
+            </div>
+            <div className="sort-switcher">
+              <span className="meta-label">Sort</span>
+              <div className="sort-pill-row">
+                {sortOrder.map((key) => (
+                  <div key={key} className={`sort-pill-group ${sortChipClass(key)}`}>
+                    <button
+                      type="button"
+                      className={`sort-pill sort-pill--${key}`}
+                      draggable
+                      onDragStart={() => setDraggingSortKey(key)}
+                      onDragEnd={() => {
+                        setDraggingSortKey(null);
+                        setDragOverSortKey(null);
+                      }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        if (draggingSortKey && draggingSortKey !== key) {
+                          setDragOverSortKey(key);
+                        }
+                      }}
+                      onDrop={() => {
+                        if (draggingSortKey && draggingSortKey !== key) {
+                          reorderSortKeys(draggingSortKey, key);
+                        }
+                        setDraggingSortKey(null);
+                        setDragOverSortKey(null);
+                      }}
+                      title="Drag to reorder sort priority"
+                    >
+                      <span className="sort-pill-handle">::</span>
+                      {SORT_LABELS[key]}
+                    </button>
+                    <button
+                      type="button"
+                      className={`sort-direction-button sort-direction-button--${key}`}
+                      onClick={() => toggleSortDirection(key)}
+                      aria-label={`Sort ${SORT_LABELS[key]} ${sortDirections[key] === "asc" ? "descending" : "ascending"}`}
+                      title={`Currently ${sortDirections[key] === "asc" ? "ascending" : "descending"}`}
+                    >
+                      <span aria-hidden="true">{sortDirections[key] === "asc" ? "▴" : "▾"}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -3140,6 +3216,16 @@ function App() {
                   >
                     {expandedLane === status ? <ChevronDown strokeWidth={1.9} /> : <ChevronRight strokeWidth={1.9} />}
                   </button>
+                  <button
+                    type="button"
+                    className="lane-toggle lane-hide-button"
+                    aria-label={`Hide ${status}`}
+                    title={canHideAnotherLane ? `Hide ${status}` : "At least one lane must stay visible"}
+                    disabled={!canHideAnotherLane}
+                    onClick={() => toggleLaneVisibility(status, false)}
+                  >
+                    {closeIcon()}
+                  </button>
                   <h2>{status}</h2>
                 </div>
                 <div className="lane-header-actions">
@@ -3158,16 +3244,6 @@ function App() {
                       {newBacklogIcon()}
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="icon-button lane-hide-button"
-                    aria-label={`Hide ${status}`}
-                    title={canHideAnotherLane ? `Hide ${status}` : "At least one lane must stay visible"}
-                    disabled={!canHideAnotherLane}
-                    onClick={() => toggleLaneVisibility(status, false)}
-                  >
-                    {closeIcon()}
-                  </button>
                   <span>{epicEntries.reduce((sum, [, items]) => sum + items.length, 0)}</span>
                 </div>
               </div>
@@ -3210,7 +3286,7 @@ function App() {
                           <button type="button" className="story-summary-button quick-edit-trigger" onClick={(event) => openQuickEditor(item, "summary", event)}>{item.summary || "Add summary"}</button>
                           <div className="story-meta-line">
                             <button type="button" className="story-pill story-pill--owner quick-edit-trigger" onClick={(event) => openQuickEditor(item, "owner", event)}>{item.owner}</button>
-                            <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)}>{item.status}</button>
+                            <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)} title={item.status === "Blocked" ? blockedTooltip(item) : undefined}>{item.status}</button>
                             <span className="story-sprint-chip-group">
                         <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
                         {!item.sprintAssigned.trim() && item.status !== "Done" && hasValidCurrentSprint ? (
@@ -3231,7 +3307,7 @@ function App() {
                             <div className="story-last-updated">{formatLastUpdated(item.lastUpdated)}</div>
                             <div className="story-card-footer-chips">
                               {(() => { const traceability = getItemTraceabilityUrls(item); return <TraceabilityActions gitUrl={traceability.git} prUrl={traceability.pr} />; })()}
-                              {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
+                              {item.status === "Blocked" ? <span className="story-blocked-chip" title={blockedTooltip(item)}>Blocked</span> : null}
                               {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
                               {item.status !== "Blocked" && item.status !== "Done" && item.sprintAssigned.trim() ? <span className="story-planned-chip">Planned</span> : null}
                             </div>
@@ -3375,13 +3451,13 @@ function App() {
                     required
                     aria-label="Story title"
                   />
-                  {(() => {
-                    const { git, pr } = getItemTraceabilityUrls(editor);
-                    return <TraceabilityActions gitUrl={git} prUrl={pr} className="editor-traceability-actions" />;
-                  })()}
                 </div>
               </div>
               <div className="editor-actions">
+                {(() => {
+                  const { git, pr } = getEditorTraceabilityUrls(editor);
+                  return <TraceabilityActions gitUrl={git} prUrl={pr} className="editor-traceability-actions" />;
+                })()}
                 <button
                   type="submit"
                   className="icon-button icon-button--save"
@@ -3608,6 +3684,30 @@ function App() {
               />
             </label>
             <label>
+              Blocked
+              <textarea
+                rows={2}
+                value={editor.blocked}
+                onChange={(event) => setEditor({ ...editor, blocked: event.target.value })}
+              />
+            </label>
+            <label>
+              Git commit
+              <input
+                value={editor.gitCommit}
+                onChange={(event) => setEditor({ ...editor, gitCommit: event.target.value })}
+                placeholder="https://github.com/org/repo/commit/..."
+              />
+            </label>
+            <label>
+              Git PR URL
+              <input
+                value={editor.gitPrUrl}
+                onChange={(event) => setEditor({ ...editor, gitPrUrl: event.target.value })}
+                placeholder="https://github.com/org/repo/pull/..."
+              />
+            </label>
+            <label>
               Links
               <textarea
                 rows={2}
@@ -3615,10 +3715,6 @@ function App() {
                 onChange={(event) => setEditor({ ...editor, links: event.target.value })}
               />
             </label>
-            {(() => {
-              const { git, pr } = parseTraceabilityLinks(editor.links);
-              return <TraceabilityActions gitUrl={git} prUrl={pr} className="traceability-preview" />;
-            })()}
             <label>
               Implementation notes
               <textarea
