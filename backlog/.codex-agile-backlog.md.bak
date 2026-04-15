@@ -730,24 +730,23 @@ This file is the durable repo backlog for `CodexAgile`.
 - Git commit: 
 - Git PR URL: 
 - Links: 
-- Implementation notes:
-
-## In Progress
+- Implementation notes: 
 
 ### Epic 3, Future UX and workflow polish
 
 ## BACKLOG-077 - Show Paula sprint-goal summary by selector
-- Status: In Progress
+- Git Commit: 
+- Status: Blocked
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-15
-- Updated: 2026-04-15T17:51:50.298Z
+- Updated: 2026-04-15T18:42:48.272Z
 - Due Date: 
 - Priority: P2
 - Effort: 2
 - Sprint Assigned: Sprint 13
 - Ready for Implementation?: Yes
-- Tech handoff owner: Ben
+- Tech handoff owner: Dave
 - Summary: Show a one-line Paula-generated summary beside the sprint selector that explains the selected sprint's goals in plain language.
 - Outcome / user value: Users can understand the intent of the selected sprint at a glance without mentally reconstructing it from ticket titles alone.
 - Scope notes: In scope, one concise plain-language summary beside the sprint selector for the currently selected sprint, generating the summary from the stories assigned to that sprint, updating the visible summary when the selected sprint changes, and showing a calm empty or failure state when a meaningful summary cannot be produced. In scope, keeping the treatment compact enough to remain secondary to the selector rather than turning into a full sprint brief. Out of scope, multi-paragraph sprint plans, editing the summary manually in the board UI, storing the summary as a new markdown field, or replacing detailed grooming notes and sprint planning flows.
@@ -759,11 +758,17 @@ This file is the durable repo backlog for `CodexAgile`.
   - [ ] If Paula cannot generate the summary, the UI shows a visible failure state that leaves the sprint selector usable.
   - [ ] The summary remains a compact adjacent line and does not push the sprint selector into a separate expanded panel or workflow.
 - Dependencies: current sprint selector state, selected-sprint ticket aggregation, Paula summary generation flow, summary-line rendering, empty-sprint handling.
-- Blocked: 
+- Blocked: Dave completed Result: block Status: blocked Branch: feature/BACKLOG-076-lane-visibility-followthrough Push: unavailable
 - Git commit: 
-- Git PR URL: 
-- Links: 
+- Git PR URL: - Links:
+- Links: branch: feature/BACKLOG-076-lane-visibility-followthrough
 - Implementation notes:
+- 2026-04-15T18:42:48.272Z: Dave completed Result: block Status: blocked Branch: feature/BACKLOG-076-lane-visibility-followthrough Push: unavailable
+- 2026-04-15T18:42:22.635Z: Paula approved the work; handed to Dave for branch, commit, and push follow-through. Paula completed: Decision: approve Status: done Conclusion:
+- 2026-04-15T18:42:14.292Z: Tess validated the pass; handed to Paula. Tess completed: Verdict: pass Status: done Conclusion:
+- 2026-04-15T18:41:25.787Z: Ben pass complete; handed to Tess. Ben completed: Status: done Conclusion: Implemented a compact Paula sprint-goal summary beside the current sprint selector in `agent-backlog`. The UI now fetches a generated one-line summary for the selected sprint, updates when the sprint changes, shows a calm empty state when there is nothing useful to summarise, and shows a visible failure message without blocking selector use.
+- 2026-04-15T18:35:45.437Z: Olivia pass 1 started and handed to Ben Builder.
+## In Progress
 
 ## Testing
 
@@ -772,6 +777,11 @@ This file is the durable repo backlog for `CodexAgile`.
 ## Done
 
 ### Epic 1, Markdown-first backlog workflow
+
+
+
+
+
 
 ## BACKLOG-004 - Keep the backlog board synced with markdown file changes
 - Status: Done
