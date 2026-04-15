@@ -183,6 +183,7 @@ interface ConfigPopoverState {
 
 interface SavedLayout {
   currentSprintTarget: string | null;
+  hiddenStatuses: Status[];
   recentBacklogs: RecentBacklog[];
   selectedEpic: string;
   selectedOwner: string;
@@ -191,6 +192,17 @@ interface SavedLayout {
   textFilter: string;
   sortOrder: SortKey[];
   sortDirections: Record<SortKey, SortDirection>;
+}
+
+type HeaderPresetKind = "open" | "assigned" | "blocked" | "done" | "epics" | "unassigned" | "ungroomed";
+
+interface FilterSnapshot {
+  expandedLane: Status | null;
+  selectedEpic: string;
+  selectedOwner: string;
+  selectedSprint: string;
+  selectedStatus: string;
+  textFilter: string;
 }
 
 const SAVED_LAYOUT_STORAGE_PREFIX = "agent-backlog:saved-layout:";
@@ -314,7 +326,7 @@ function clampPaulaPanelPosition(position: { x: number; y: number }, expanded: b
 function defaultPaulaPanelPosition(expanded = false) {
   const size = paulaPanelSize(expanded);
   const x = Math.max(16, window.innerWidth - size.width - 24);
-  const y = Math.max(16, window.innerHeight - size.height - 96);
+  const y = Math.max(16, window.innerHeight - size.height - 180);
   return { x, y };
 }
 
@@ -579,6 +591,8 @@ function App() {
   const [draggingSortKey, setDraggingSortKey] = useState<SortKey | null>(null);
   const [dragOverSortKey, setDragOverSortKey] = useState<SortKey | null>(null);
   const [expandedLane, setExpandedLane] = useState<Status | null>(null);
+  const [hiddenStatuses, setHiddenStatuses] = useState<Status[]>([]);
+  const [activeHeaderPreset, setActiveHeaderPreset] = useState<HeaderPresetKind | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [recentBacklogs, setRecentBacklogs] = useState<RecentBacklog[]>([]);
   const [missingBacklogNotice, setMissingBacklogNotice] = useState<MissingBacklogNotice | null>(null);
@@ -605,6 +619,7 @@ function App() {
   const [showPaulaPanel, setShowPaulaPanel] = useState(false);
   const [inboxIntakeArmed, setInboxIntakeArmed] = useState(false);
   const [blockedIntakeContext, setBlockedIntakeContext] = useState<string | undefined>(undefined);
+  const [externalAgentSubmission, setExternalAgentSubmission] = useState<{ id: number; text: string } | null>(null);
   const [paulaPanelExpanded, setPaulaPanelExpanded] = useState(false);
   const [paulaPanelPosition, setPaulaPanelPosition] = useState(defaultPaulaPanelPosition);
   const paulaCompactPositionRef = useRef(defaultPaulaPanelPosition(false));
@@ -618,6 +633,7 @@ function App() {
   const draggingPaulaRef = useRef(false);
   const savedLayoutAppliedForPathRef = useRef<string | null>(null);
   const layoutAutosaveReadyForPathRef = useRef<string | null>(null);
+  const headerPresetSnapshotRef = useRef<FilterSnapshot | null>(null);
 
   async function loadConfig() {
     const response = await fetch("/api/config");
@@ -729,6 +745,7 @@ function App() {
 
     const layout: SavedLayout = {
       currentSprintTarget: currentSprintSelection,
+      hiddenStatuses,
       recentBacklogs,
       selectedEpic,
       selectedOwner,
@@ -764,6 +781,9 @@ function App() {
       }
       if (typeof parsed.currentSprintTarget === "string" || parsed.currentSprintTarget === null) {
         setCurrentSprintTarget(parsed.currentSprintTarget ?? null);
+      }
+      if (Array.isArray(parsed.hiddenStatuses)) {
+        setHiddenStatuses(parsed.hiddenStatuses.filter((status): status is Status => STATUSES.includes(status as Status)));
       }
       if (Array.isArray(parsed.recentBacklogs)) {
         setRecentBacklogs(parsed.recentBacklogs.filter((entry): entry is RecentBacklog => Boolean(entry && typeof entry.path === "string" && typeof entry.displayName === "string")));
@@ -936,6 +956,7 @@ function App() {
   }, [
     currentSprintSelection,
     data?.path,
+    hiddenStatuses,
     selectedEpic,
     selectedOwner,
     selectedSprint,
@@ -1006,6 +1027,18 @@ function App() {
       .filter((item) => selectedEpic === "All epics" || item.epic === selectedEpic)
       .filter((item) => selectedOwner === "All owners" || item.owner === selectedOwner)
       .filter((item) => {
+        if (activeHeaderPreset === "open" && item.status === "Done") {
+          return false;
+        }
+        if (activeHeaderPreset === "assigned" && (!item.sprintAssigned.trim() || item.status === "Done")) {
+          return false;
+        }
+        if (activeHeaderPreset === "ungroomed" && item.status !== "Inbox" && item.status !== "Grooming") {
+          return false;
+        }
+        if (activeHeaderPreset === "open" || activeHeaderPreset === "assigned" || activeHeaderPreset === "ungroomed") {
+          return true;
+        }
         if (selectedStatus !== ALL_STATUSES && item.status !== selectedStatus) return false;
         if (selectedSprint === ALL_SPRINTS) return true;
         if (selectedSprint === UNASSIGNED_SPRINT) {
@@ -1040,7 +1073,7 @@ function App() {
     }
 
     return statuses;
-  }, [currentSprintSelection, data, selectedEpic, selectedOwner, selectedSprint, sortDirections, sortOrder, textFilter]);
+  }, [activeHeaderPreset, currentSprintSelection, data, selectedEpic, selectedOwner, selectedSprint, selectedStatus, sortDirections, sortOrder, textFilter]);
 
   const ownerOptions = useMemo(() => {
     const owners = new Set<string>(customOwnerOptions);
@@ -1120,6 +1153,7 @@ function App() {
   }, [data]);
 
   const availableSprintTargets = useMemo(() => sprintOptions.filter((sprint) => sprint !== ALL_SPRINTS && sprint !== UNASSIGNED_SPRINT), [sprintOptions]);
+  const hasValidCurrentSprint = !!currentSprintTarget && availableSprintTargets.includes(currentSprintTarget);
 
   useEffect(() => {
     if (!data) return;
@@ -1140,6 +1174,14 @@ function App() {
     if (!currentSprintSelection.trim()) return [];
     return data.document.items.filter((item) => item.sprintAssigned === currentSprintSelection);
   }, [currentSprintSelection, data]);
+
+  useEffect(() => {
+    if (selectedStatus === ALL_STATUSES) {
+      setExpandedLane(null);
+      return;
+    }
+    setExpandedLane(selectedStatus as Status);
+  }, [selectedStatus]);
 
   const autoSprintSelectedItems = useMemo(() => {
     if (!data || !autoSprintProposal) return [] as BacklogItem[];
@@ -1379,11 +1421,14 @@ function App() {
   async function runAutoGroom() {
     if (!data) return;
     if (!currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT) {
+      openPaulaPanel();
       setError("Select a valid current sprint before starting Auto Groom.");
+      setAgentStatus("Auto Groom blocked, pick a valid current sprint first.");
       return;
     }
 
     setIsAutoGroomStarting(true);
+    setError(null);
     try {
       openPaulaPanel();
       setAgentStatus(`Opening Paula chat for ${currentSprintSelection}...`);
@@ -1413,21 +1458,37 @@ function App() {
       ]
         .filter(Boolean)
         .join(" ");
-      const launchResponse = await fetch("/api/agent/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction: launchInstruction }),
-      });
-
-      const launchPayload = (await launchResponse.json().catch(() => null)) as { message?: string } | null;
-      if (!launchResponse.ok) {
-        throw new Error(launchPayload?.message ?? "Failed to send Auto Groom launch intent");
-      }
-
-      setAgentStatus(contextPayload?.message ?? launchPayload?.message ?? `Auto Groom started for ${currentSprintSelection}.`);
+      setExternalAgentSubmission({ id: Date.now(), text: launchInstruction });
+      setAgentStatus(`Auto Groom started for ${currentSprintSelection}.`);
       setError(null);
+    } catch (error) {
+      const message = (error as Error).message || "Failed to start Auto Groom";
+      setError(message);
+      setAgentStatus(`Auto Groom failed, ${message}`);
     } finally {
       setIsAutoGroomStarting(false);
+    }
+  }
+
+  function showBuildPlaceholderNotice() {
+    const message = "Build is not wired yet. Plan and Groom are live, Build is next.";
+    setAgentStatus(message);
+    setError(null);
+  }
+
+  async function addItemToCurrentSprint(item: BacklogItem, event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!hasValidCurrentSprint || !currentSprintTarget) {
+      setError("Select a valid current sprint first.");
+      return;
+    }
+
+    try {
+      await assignItemToSprint(item, currentSprintTarget);
+      setError(null);
+    } catch (caught) {
+      setError((caught as Error).message);
     }
   }
 
@@ -1945,10 +2006,50 @@ function App() {
     openPaulaPanel();
   }
 
-  function applyHeaderPreset(kind: "open" | "blocked" | "done" | "epics" | "unassigned") {
+  function restoreFilterSnapshot(snapshot: FilterSnapshot) {
+    setSelectedEpic(snapshot.selectedEpic);
+    setSelectedOwner(snapshot.selectedOwner);
+    setSelectedSprint(snapshot.selectedSprint);
+    setSelectedStatus(snapshot.selectedStatus);
+    setTextFilter(snapshot.textFilter);
+    setExpandedLane(snapshot.expandedLane);
+  }
+
+  function applyHeaderPreset(kind: HeaderPresetKind) {
+    if (activeHeaderPreset === kind && headerPresetSnapshotRef.current) {
+      restoreFilterSnapshot(headerPresetSnapshotRef.current);
+      headerPresetSnapshotRef.current = null;
+      setActiveHeaderPreset(null);
+      return;
+    }
+
+    if (!headerPresetSnapshotRef.current) {
+      headerPresetSnapshotRef.current = {
+        expandedLane,
+        selectedEpic,
+        selectedOwner,
+        selectedSprint,
+        selectedStatus,
+        textFilter,
+      };
+    }
+
+    setActiveHeaderPreset(kind);
     if (kind === "open") {
       setSelectedStatus(ALL_STATUSES);
       setSelectedSprint(ALL_SPRINTS);
+      setExpandedLane(null);
+      return;
+    }
+    if (kind === "assigned") {
+      setSelectedStatus(ALL_STATUSES);
+      setSelectedSprint(ALL_SPRINTS);
+      setExpandedLane(null);
+      return;
+    }
+    if (kind === "ungroomed") {
+      setSelectedStatus(ALL_STATUSES);
+      setExpandedLane(null);
       return;
     }
     if (kind === "blocked") {
@@ -2035,7 +2136,46 @@ function App() {
     return "";
   }
 
-  const visibleStatuses = STATUSES.filter((status) => status !== "Blocked");
+  const visibleStatuses = activeHeaderPreset === "ungroomed"
+    ? ["Inbox", "Grooming"] satisfies Status[]
+    : activeHeaderPreset === "open" || activeHeaderPreset === "assigned"
+      ? STATUSES.filter((status) => status !== "Done") as Status[]
+      : STATUSES.filter((status) => status !== "Blocked");
+
+  const laneVisibilityStatuses = visibleStatuses.filter((status) => {
+    if (activeHeaderPreset !== "open" && activeHeaderPreset !== "assigned" && activeHeaderPreset !== "ungroomed" && activeHeaderPreset !== "unassigned") {
+      return true;
+    }
+    return (grouped.get(status)?.size ?? 0) > 0;
+  });
+
+  const visibleLaneStatuses = laneVisibilityStatuses.filter((status) => !hiddenStatuses.includes(status));
+
+  const renderedStatuses = expandedLane
+    ? [expandedLane]
+    : visibleLaneStatuses;
+  const isHeaderSubsetMode = !expandedLane && (activeHeaderPreset === "open" || activeHeaderPreset === "assigned" || activeHeaderPreset === "ungroomed" || activeHeaderPreset === "unassigned");
+  const canHideAnotherLane = visibleLaneStatuses.length > 1;
+
+  function toggleLaneVisibility(status: Status, nextVisible: boolean) {
+    setHiddenStatuses((current) => {
+      const isHidden = current.includes(status);
+      if (nextVisible) {
+        return current.filter((candidate) => candidate !== status);
+      }
+      if (isHidden) {
+        return current;
+      }
+      const visibleCount = laneVisibilityStatuses.filter((candidate) => !current.includes(candidate)).length;
+      if (visibleCount <= 1) {
+        return current;
+      }
+      if (expandedLane === status) {
+        setExpandedLane(null);
+      }
+      return [...current, status];
+    });
+  }
 
   if (loading) {
     return <div className="screen-state">Loading backlog…</div>;
@@ -2142,34 +2282,52 @@ function App() {
               ))}
             </div>
             <div className="metrics-row hero-metrics-row">
-              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("open")}>
+              <div className="meta-card metric-card metric-card--plain metric-card--muted">
+                <span className="meta-label">Stories</span>
+                <div className="metric-value">
+                  {(data?.document.items.length) ?? 0}
+                </div>
+              </div>
+              <div className="meta-card metric-card metric-card--plain metric-card--muted">
+                <span className="meta-label">Epics</span>
+                <div className="metric-value">
+                  {new Set(data?.document.items.map((item) => item.epic)).size}
+                </div>
+              </div>
+              <button type="button" className={`meta-card metric-card metric-card--plain metric-card--section-break metric-card--button ${activeHeaderPreset === "open" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("open")}>
                 <span className="meta-label">Open</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status !== "Done").length) ?? 0}
                 </div>
               </button>
-              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("unassigned")}>
-                <span className="meta-label">Unassigned</span>
-                <div className="metric-value">
-                  {(data?.document.items.filter((item) => !item.sprintAssigned.trim() && item.status !== "Done").length) ?? 0}
-                </div>
-              </button>
-              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("blocked")}>
-                <span className="meta-label">Blocked</span>
-                <div className="metric-value">
-                  {(data?.document.items.filter((item) => item.status === "Blocked").length) ?? 0}
-                </div>
-              </button>
-              <button type="button" className="meta-card metric-card metric-card--plain metric-card--button" onClick={() => applyHeaderPreset("done")}>
+              <button type="button" className={`meta-card metric-card metric-card--plain metric-card--button ${activeHeaderPreset === "done" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("done")}>
                 <span className="meta-label">Done</span>
                 <div className="metric-value">
                   {(data?.document.items.filter((item) => item.status === "Done").length) ?? 0}
                 </div>
               </button>
-              <button type="button" className="meta-card metric-card metric-card--plain metric-card--section-break metric-card--button" onClick={() => applyHeaderPreset("epics")}>
-                <span className="meta-label">Epics</span>
+              <button type="button" className={`meta-card metric-card metric-card--plain metric-card--section-break metric-card--button ${activeHeaderPreset === "assigned" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("assigned")}>
+                <span className="meta-label">Planned</span>
                 <div className="metric-value">
-                  {new Set(data?.document.items.map((item) => item.epic)).size}
+                  {(data?.document.items.filter((item) => item.sprintAssigned.trim() && item.status !== "Done").length) ?? 0}
+                </div>
+              </button>
+              <button type="button" className={`meta-card metric-card metric-card--plain metric-card--button ${activeHeaderPreset === "unassigned" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("unassigned")}>
+                <span className="meta-label">No sprint</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => !item.sprintAssigned.trim() && item.status !== "Done").length) ?? 0}
+                </div>
+              </button>
+              <button type="button" className={`meta-card metric-card metric-card--plain metric-card--section-break metric-card--button ${activeHeaderPreset === "ungroomed" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("ungroomed")}>
+                <span className="meta-label">Ungroomed</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => item.status === "Inbox" || item.status === "Grooming").length) ?? 0}
+                </div>
+              </button>
+              <button type="button" className={`meta-card metric-card metric-card--plain metric-card--button ${activeHeaderPreset === "blocked" ? "is-active" : ""}`} onClick={() => applyHeaderPreset("blocked")}>
+                <span className="meta-label">Blocked</span>
+                <div className="metric-value">
+                  {(data?.document.items.filter((item) => item.status === "Blocked").length) ?? 0}
                 </div>
               </button>
               <div className="hero-toolbar-utility">
@@ -2429,11 +2587,11 @@ function App() {
                 }}
                 autoFocus
               >
+                <option value="__new__">New sprint</option>
                 <option value="">No sprint</option>
                 {availableSprintTargets.map((sprint) => (
                   <option key={sprint} value={sprint}>{sprint}</option>
                 ))}
-                <option value="__new__">New sprint</option>
               </select>
             ) : (
               <input
@@ -2651,7 +2809,20 @@ function App() {
                     <div className="story-meta-line">
                       <button type="button" className="story-pill story-pill--owner quick-edit-trigger" onClick={(event) => openQuickEditor(item, "owner", event)}>{item.owner}</button>
                       <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)}>{item.status}</button>
-                      <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
+                      <span className="story-sprint-chip-group">
+                        <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
+                        {!item.sprintAssigned.trim() && item.status !== "Done" && hasValidCurrentSprint ? (
+                          <button
+                            type="button"
+                            className="story-pill story-pill--sprint story-pill--sprint-add"
+                            onClick={(event) => void addItemToCurrentSprint(item, event)}
+                            aria-label={`Add ${item.id} to ${currentSprintTarget}`}
+                            title={`Add to ${currentSprintTarget}`}
+                          >
+                            +
+                          </button>
+                        ) : null}
+                      </span>
                       <button type="button" className="story-pill story-pill--due quick-edit-trigger" onClick={(event) => openQuickEditor(item, "dueDate", event)}>{item.dueDate ? `Due ${formatDueDate(item.dueDate)}` : "Add due"}</button>
                     </div>
                     <div className="story-card-footer">
@@ -2660,7 +2831,7 @@ function App() {
                         {(() => { const traceability = getItemTraceabilityUrls(item); return <TraceabilityActions gitUrl={traceability.git} prUrl={traceability.pr} />; })()}
                         {item.status === "Blocked" ? <span className="story-blocked-chip">Blocked</span> : null}
                         {item.status === "Done" ? <span className="story-done-chip">Done</span> : null}
-                        {item.status !== "Blocked" && item.status !== "Done" ? <span className="story-planned-chip">Planned</span> : null}
+                        {item.status !== "Blocked" && item.status !== "Done" && item.sprintAssigned.trim() ? <span className="story-planned-chip">Planned</span> : null}
                       </div>
                     </div>
                   </article>
@@ -2687,32 +2858,35 @@ function App() {
                   </select>
                 </label>
               </div>
-              <div className="current-sprint-actions-row">
-                <button
-                  type="button"
-                  className={`primary-button auto-sprint-button ${isAutoSprintRunning ? "is-running" : ""}`}
-                  disabled={!data || isAutoSprintRunning}
-                  onClick={() => void runAutoSprint().catch((caught) => setError((caught as Error).message))}
-                >
-                  {isAutoSprintRunning ? <span className="button-spinner" aria-hidden="true" /> : null}
-                  <span>Auto Plan</span>
-                </button>
-                <button
-                  type="button"
-                  className={`primary-button auto-groom-button ${isAutoGroomStarting ? "is-running" : ""}`}
-                  disabled={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT || isAutoGroomStarting}
-                  title={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? "Select a valid current sprint first." : `Open Paula chat for ${currentSprintSelection}`}
-                  onClick={() => void runAutoGroom().catch((caught) => setError((caught as Error).message))}
-                >
-                  {isAutoGroomStarting ? <span className="button-spinner" aria-hidden="true" /> : null}
-                  <span>Auto Groom</span>
+              <div className="current-sprint-actions-stack">
+                <div className="current-sprint-actions-row">
+                  <button
+                    type="button"
+                    className={`primary-button auto-sprint-button ${isAutoSprintRunning ? "is-running" : ""}`}
+                    disabled={!data || isAutoSprintRunning}
+                    onClick={() => void runAutoSprint().catch((caught) => setError((caught as Error).message))}
+                  >
+                    {isAutoSprintRunning ? <span className="button-spinner" aria-hidden="true" /> : null}
+                    <span>Auto Plan</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`primary-button auto-groom-button ${isAutoGroomStarting ? "is-running" : ""}`}
+                    disabled={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT || isAutoGroomStarting}
+                    title={!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? "Select a valid current sprint first." : `Open Paula chat for ${currentSprintSelection}`}
+                    onClick={() => void runAutoGroom().catch((caught) => setError((caught as Error).message))}
+                  >
+                    {isAutoGroomStarting ? <span className="button-spinner" aria-hidden="true" /> : null}
+                    <span>Auto Groom</span>
+                  </button>
+                </div>
+                <button type="button" className="secondary-button build-placeholder-button" title="Build flow is not wired yet." onClick={showBuildPlaceholderNotice}>
+                  Build
                 </button>
               </div>
               {!data || !currentSprintSelection || currentSprintSelection === UNASSIGNED_SPRINT ? (
                 <div className="current-sprint-help current-sprint-help--blocked">Pick a valid current sprint to groom it with Paula.</div>
-              ) : (
-                <div className="current-sprint-help">Paula will open in the normal chat flow with {currentSprintSelection} as context.</div>
-              )}
+              ) : null}
             </aside>
           </div> : null}
         </div>
@@ -2840,6 +3014,32 @@ function App() {
                   </button>
                 </div>
               </label>
+              <div className="epic-switcher lane-visibility-switcher">
+                <span className="meta-label">Lanes</span>
+                <details className="lane-visibility-menu">
+                  <summary>
+                    <span>Lane visibility</span>
+                    <ChevronDown aria-hidden="true" strokeWidth={1.9} />
+                  </summary>
+                  <div className="lane-visibility-menu__panel">
+                    {laneVisibilityStatuses.map((status) => {
+                      const checked = !hiddenStatuses.includes(status);
+                      const isLastVisible = checked && !canHideAnotherLane;
+                      return (
+                        <label key={status} className={`lane-visibility-option ${isLastVisible ? "is-disabled" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={isLastVisible}
+                            onChange={(event) => toggleLaneVisibility(status, event.target.checked)}
+                          />
+                          <span>{status}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </details>
+              </div>
             </div>
           </div>
           <div className="sort-switcher">
@@ -2890,8 +3090,14 @@ function App() {
         </div>
       </section>
 
-      <main className={`board ${expandedLane ? "board--lane-expanded" : ""}`}>
-        {(expandedLane ? [expandedLane] : visibleStatuses).map((status) => {
+      <main
+        className={`board ${expandedLane ? "board--lane-expanded" : ""} ${isHeaderSubsetMode ? "board--subset-expanded" : ""}`}
+        style={!expandedLane && renderedStatuses.length > 0 && renderedStatuses.length < 7 ? {
+          gridTemplateColumns: `repeat(${renderedStatuses.length}, minmax(0, 1fr))`,
+          overflowX: "visible",
+        } : undefined}
+      >
+        {renderedStatuses.map((status) => {
           const epicMap = grouped.get(status) ?? new Map<string, BacklogItem[]>();
           const epicEntries = Array.from(epicMap.entries());
           return (
@@ -2952,16 +3158,26 @@ function App() {
                       {newBacklogIcon()}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="icon-button lane-hide-button"
+                    aria-label={`Hide ${status}`}
+                    title={canHideAnotherLane ? `Hide ${status}` : "At least one lane must stay visible"}
+                    disabled={!canHideAnotherLane}
+                    onClick={() => toggleLaneVisibility(status, false)}
+                  >
+                    {closeIcon()}
+                  </button>
                   <span>{epicEntries.reduce((sum, [, items]) => sum + items.length, 0)}</span>
                 </div>
               </div>
 
-              <div className={`lane-scroll ${expandedLane === status ? "lane-scroll--expanded" : ""}`}>
+              <div className={`lane-scroll ${expandedLane === status || isHeaderSubsetMode ? "lane-scroll--expanded" : ""}`}>
                 {epicEntries.length === 0 ? (
                   <div className="lane-empty">No stories in this lane.</div>
                 ) : (
                   epicEntries.map(([epic, items], index) => (
-                    <div key={`${status}-${epic}`} className={`epic-block ${expandedLane === status ? "epic-block--expanded" : ""}`}>
+                    <div key={`${status}-${epic}`} className={`epic-block ${expandedLane === status || isHeaderSubsetMode ? "epic-block--expanded" : ""}`}>
                       {selectedEpic === "All epics" && index > 0 ? (
                         <div className="epic-divider" aria-hidden="true" />
                       ) : null}
@@ -2995,7 +3211,20 @@ function App() {
                           <div className="story-meta-line">
                             <button type="button" className="story-pill story-pill--owner quick-edit-trigger" onClick={(event) => openQuickEditor(item, "owner", event)}>{item.owner}</button>
                             <button type="button" className="story-pill story-pill--status quick-edit-trigger" onClick={(event) => openQuickEditor(item, "status", event)}>{item.status}</button>
-                            <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
+                            <span className="story-sprint-chip-group">
+                        <button type="button" className="story-pill story-pill--sprint quick-edit-trigger" onClick={(event) => openQuickEditor(item, "sprintAssigned", event)}>{formatSprintLabel(item.sprintAssigned)}</button>
+                        {!item.sprintAssigned.trim() && item.status !== "Done" && hasValidCurrentSprint ? (
+                          <button
+                            type="button"
+                            className="story-pill story-pill--sprint story-pill--sprint-add"
+                            onClick={(event) => void addItemToCurrentSprint(item, event)}
+                            aria-label={`Add ${item.id} to ${currentSprintTarget}`}
+                            title={`Add to ${currentSprintTarget}`}
+                          >
+                            +
+                          </button>
+                        ) : null}
+                      </span>
                             <button type="button" className="story-pill story-pill--due quick-edit-trigger" onClick={(event) => openQuickEditor(item, "dueDate", event)}>{item.dueDate ? `Due ${formatDueDate(item.dueDate)}` : "Add due"}</button>
                           </div>
                           <div className="story-card-footer">
@@ -3517,6 +3746,7 @@ function App() {
               configVersion={agentConfigVersion}
               filterContext={deferredAgentContext}
               intakeContext={blockedIntakeContext ?? (inboxIntakeArmed ? inboxStoryContext : undefined)}
+              externalSubmission={externalAgentSubmission}
               onStatusChange={setAgentStatus}
               onSessionPathChange={setAgentSessionBacklogPath}
               onIntakeContextConsumed={() => {

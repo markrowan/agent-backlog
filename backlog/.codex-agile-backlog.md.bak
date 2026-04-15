@@ -22,108 +22,29 @@ Use for items currently being implemented, reviewed, or deployed.
 
 ### Done
 Use for completed items with outcome notes.
-## BACKLOG-056 - Capture blocker reason when a ticket is marked blocked
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T15:11:00.000Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 11
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Open Paula chat with a blocker-reason prompt as soon as a user marks a ticket blocked so the team captures context while it is fresh.
-- Outcome / user value: Users can explain why work is blocked at the moment they mark it blocked instead of leaving the team without enough context to act.
-- Scope notes: In scope, triggering the existing Paula chat flow from the blocked action, carrying the blocked ticket's identity into the first prompt, and capturing the blocker reason through that chat path. In scope, letting the user dismiss the prompt without undoing the blocked state. Out of scope, making the blocker reason a required markdown field, inventing a separate modal, or redesigning blocked-state visuals already tracked elsewhere.
-- Acceptance criteria:
-  - [ ] When a user marks a ticket blocked, the existing Paula chat opens automatically from that action.
-  - [ ] The first Paula prompt clearly asks what is blocking the selected ticket and includes enough ticket context that the user knows which ticket they are describing.
-  - [ ] If the user enters a blocker reason, the response is captured through the existing Paula chat path without requiring a second manual launch.
-  - [ ] If the user dismisses or ignores the prompt, the ticket remains blocked and the UI does not silently clear that state.
-  - [ ] The blocked flow stays calm and lightweight, adding context capture without forcing a separate form before the status change completes.
-- Dependencies: blocked-ticket interaction, Paula chat window, blocked-state action wiring.
-- Links: current session request
-- Implementation notes: Original intake preserved verbatim: when user marks a ticket as blocked, pop up the chat window and ask what is blocking?
-
-
-## BACKLOG-064 - Preset board filters from top-header summary clicks
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T15:11:00.000Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 11
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Make the top-header `Open`, `Blocked`, `Done`, `Epics`, and `Unassigned` summaries clickable so each one applies the matching board filters and refreshes the kanban view.
-- Outcome / user value: Users can jump directly from high-level board counts to the relevant slice of work without manually rebuilding filters every time.
-- Scope notes: In scope, making the top-header summary items clickable, applying a predefined filter set for each clicked summary, refreshing the visible kanban state immediately, and emphasizing only the lanes needed for that filtered view while minimizing lanes that are not relevant. In scope, preserving any selected sprint when the preset does not need to change sprint context, except when the `Unassigned` preset needs to surface unassigned work directly. Out of scope, custom user-defined presets, changing backlog data, or redesigning the header summary labels themselves.
-- Acceptance criteria:
-  - [ ] Clicking `Open` applies a preset that shows non-done work and refreshes the kanban immediately.
-  - [ ] Clicking `Blocked` applies a preset that shows blocked work and refreshes the kanban immediately while preserving blocked items in their lane context.
-  - [ ] Clicking `Done` applies a preset that shows completed work and refreshes the kanban immediately.
-  - [ ] Clicking `Epics` applies a preset that surfaces epic-oriented board context and refreshes the kanban immediately.
-  - [ ] Clicking `Unassigned` applies a preset that surfaces unassigned work immediately without requiring the user to build the filter set manually.
-  - [ ] After any preset is applied, lanes relevant to the resulting view are visually emphasized and lanes not needed for that view are minimized rather than competing equally for space.
-  - [ ] Repeated clicks on the same header item produce a stable, predictable board view instead of accumulating conflicting filter state.
-- Dependencies: top-header summary controls, board filtering model, kanban refresh behavior, lane emphasis behavior, unassigned-work filter behavior, BACKLOG-017, BACKLOG-037.
-- Links: current session request
-- Implementation notes: Original intake preserved in product terms: clicking on Open, Blocked, Done, Epics, and Unassigned in the top header should preset the filters, refresh the kanban, maximize the lanes that matter for that view, and minimize the lanes that do not.
-
-
-## BACKLOG-065 - Include project list in saved user layout
-- Status: Done
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T15:11:00.000Z
-- Due Date: 
-- Priority: P2
-- Effort: 1
-- Sprint Assigned: Sprint 11
-- Ready for Implementation?: Yes
-- Tech handoff owner: Ben
-- Summary: Extend `Save layout` so it restores the user's project list, filters, sorting, and current sprint along with the saved board layout.
-- Outcome / user value: Users can return to the same working context without rebuilding their project list, board filters, sort order, or sprint focus after leaving and coming back.
-- Scope notes: In scope, saving the current user's project list, active filters, current sorting, and current sprint selection as part of the existing per-user layout payload, restoring that state on the next visit, and keeping the behavior scoped to that same user only. In scope, treating this as an extension of the existing single saved layout rather than a separate saved-preferences feature. Out of scope, shared saved layouts across users, multiple named saved layouts, or changes to the backlog markdown file itself.
-- Acceptance criteria:
-  - [ ] Activating `Save layout` stores the current user's project list, active filters, current sorting, and current sprint together with the rest of the saved layout state.
-  - [ ] When the same user returns later, the app restores the saved project list, filters, sorting, and current sprint alongside the previously saved layout settings.
-  - [ ] The saved project list, filters, sorting, and sprint state remain scoped to the current user and do not overwrite another user's saved context.
-  - [ ] If one or more of those saved state elements do not exist yet, the app keeps its current fallback behavior instead of failing to restore the layout.
-- Dependencies: BACKLOG-003, per-user preference storage, project list persistence model, board filter persistence, sorting persistence, sprint selection persistence.
-- Links: current session request
-- Implementation notes: Follow-up to the shipped `Save layout` behavior so saved board context also includes the user's project list, active filters, sorting, and current sprint.
-
-
 ## Item template
 
-```md## BACKLOG-XXX - Title
+```md
+## BACKLOG-XXX - Title
 - Status: Inbox | Grooming | Ready | In Progress | Testing | Review | Done
-- Owner: Paula Product
-- Requester: Name or source thread
+- Owner: ...
+- Requester: ...
 - Date added: YYYY-MM-DD
-- Last updated: YYYY-MM-DD
+- Updated: YYYY-MM-DDTHH:MM:SS.sssZ
+- Due Date: YYYY-MM-DD
 - Priority: P0 | P1 | P2 | P3
 - Effort: 1 | 2 | 3
-- Sprint Assigned: Sprint name
+- Sprint Assigned: ...
 - Ready for Implementation?: No | Yes
 - Tech handoff owner: Unassigned | Ben | Tess | Dave
-- Tess sign-off: No
-- Paula sign-off: No
-- Summary: One-sentence description of the request
-- Outcome / user value: Why this matters
-- Scope notes: In scope / out of scope / open questions
+- Summary: ...
+- Outcome / user value: ...
+- Scope notes: ...
 - Acceptance criteria:
-  - [ ] Specific observable outcome
-- Dependencies: Systems, approvals, or blocking tickets
-- Links: Issue, PR, docs, chat thread, artifacts
-- Implementation notes: Implemented Auto Sprint selection and apply flow in the app, with dependency-aware filtering and automatic sprint assignment.
+  - [ ] ...
+- Dependencies: ...
+- Links: ...
+- Implementation notes: ...
 ```
 
 ---
@@ -139,7 +60,7 @@ Use for completed items with outcome notes.
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T15:07:16.409Z
+- Updated: 2026-04-15T11:35:55.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
@@ -148,7 +69,7 @@ Use for completed items with outcome notes.
 - Tech handoff owner: Unassigned
 - Summary: Keep the date-based sprint planning request split into focused child stories for cadence rules, planning navigation, ticket assignment, and storage decisions.
 - Outcome / user value: Product and engineering can shape calendar-based sprint planning without bundling UX, planning logic, and data-model decisions into one oversized ticket.
-- Scope notes: In scope, splitting the intake into child stories for sprint cadence and date rules, date-range paging, ticket-assignment behavior during planning, and backlog storage decisions. In scope, preserving the original request and making the dependency order explicit. In scope, treating `BACKLOG-058`, `BACKLOG-059`, and `BACKLOG-060` as the current Sprint 12 delivery slice while `BACKLOG-061` remains deferred until the storage decision is ready. Out of scope, carrying this request as one implementation ticket or choosing a final UI and storage design on the parent card.
+- Scope notes: In scope, splitting the intake into child stories for sprint cadence and date rules, date-range paging, ticket-assignment behavior during planning, and backlog storage decisions. In scope, preserving the original request and making the dependency order explicit. In scope, treating `BACKLOG-058`, `BACKLOG-059`, and `BACKLOG-060` as the near-term delivery slice while `BACKLOG-061` remains deferred until the storage decision is ready. Out of scope, carrying this request as one implementation ticket or choosing a final UI and storage design on the parent card.
 - Acceptance criteria:
   - [ ] The sprint cadence and date-window rules are tracked in a dedicated child story.
   - [ ] The date-based paging and navigation behavior is tracked in a dedicated child story.
@@ -234,31 +155,6 @@ Use for completed items with outcome notes.
 - Links: current session request
 - Implementation notes: Original intake preserved in product terms: deploy in a containerised instance with the codex package installed, convert `Open` into markdown upload that stores the file locally and references it in project pills, and show only the markdown file name stub on project-pill mouseover.
 
-## BACKLOG-069 - Add a lightweight user profile switcher
-- Status: Grooming
-- Owner: Paula Product
-- Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T23:43:26.609Z
-- Due Date: 
-- Priority: P1
-- Effort: 2
-- Sprint Assigned: Sprint 11
-- Ready for Implementation?: No
-- Tech handoff owner: Unassigned
-- Summary: Add a user profile button that switches the app to a different config file so each profile remembers its own project list and saved layouts.
-- Outcome / user value: One person can keep separate working contexts without overwriting another context's recent projects and layout choices.
-- Scope notes: In scope, a visible profile-switch entry point, a first-release model where each chosen profile maps to a different config file, and keeping remembered project files and layout state isolated per profile. In scope, clarifying whether profile creation is manual, seeded, or lightweight in-app for v1. Out of scope, full sign-in, permissions, remote identity providers, or shared editing rules between different people.
-- Acceptance criteria:
-  - [ ] The product provides a visible user profile control for switching between at least two profile contexts.
-  - [ ] Switching profiles changes which config file the app reads and writes for profile-scoped preferences.
-  - [ ] Each profile remembers its own project-file list without overwriting another profile's remembered projects.
-  - [ ] Each profile remembers its own saved layout state independently of other profiles.
-  - [ ] The story defines the minimum v1 rule for creating or naming profiles so the behavior is predictable.
-- Dependencies: BACKLOG-065, profile-to-config mapping decision, hosted config storage behavior.
-- Links: current session request
-- Implementation notes: Original intake preserved in product terms: add a user profile button that initially just writes to a different config file and therefore remembers different project files and layouts.
-
 ## BACKLOG-070 - Add OAuth sign-in for hosted access
 - Status: Grooming
 - Owner: Paula Product
@@ -289,52 +185,257 @@ Use for completed items with outcome notes.
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T21:31:57.000Z
+- Updated: 2026-04-15T12:07:21.000Z
 - Due Date: 
 - Priority: P0
 - Effort: 3
-- Sprint Assigned: 
+- Sprint Assigned: Sprint 14
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
-- Summary: Let multiple authenticated users use the same hosted server concurrently without leaking each other's files, layouts, or in-progress actions.
+- Summary: Let multiple authenticated users use the same hosted server concurrently without leaking each other's files, layouts, in-progress actions, or project-shared integrations.
 - Outcome / user value: Teams can share one hosted deployment safely instead of needing a separate server per person to avoid collisions and lost context.
-- Scope notes: In scope, defining the isolation rules needed for concurrent hosted use across uploaded backlog files, saved layouts, Paula sessions, and sprint-run actions on one server. In scope, clarifying what is user-scoped, what is project-scoped, and what conflict handling is required when more than one user touches the same hosted backlog. In scope, preserving the markdown file as the source of truth while making concurrent usage legible and safe. Out of scope, fine-grained enterprise permissions, billing, or a full collaborative presence system.
+- Scope notes: In scope, defining the isolation rules needed for concurrent hosted use across uploaded backlog files, saved layouts, Paula sessions, sprint-run actions, and any project integration credentials shared with invited users on one server. In scope, clarifying what is user-scoped, what is project-scoped, and what conflict handling is required when more than one user touches the same hosted backlog or shared project configuration. In scope, preserving the markdown file as the source of truth while making concurrent usage legible and safe. Out of scope, fine-grained enterprise permissions, billing, or a full collaborative presence system.
 - Acceptance criteria:
   - [ ] Multiple authenticated users can use the same hosted server without seeing another user's private saved layout or profile-scoped project context by default.
-  - [ ] The story defines whether uploaded backlog files are private per user, shared per project, or shared per workspace, and how that scope is surfaced in the UI.
+  - [ ] The story defines whether uploaded backlog files and any project integration credentials are private per user, shared per project, or shared per workspace, and how that scope is surfaced in the UI.
   - [ ] The story defines how Paula sessions and sprint-run actions are isolated or labeled when more than one user is active at the same time.
   - [ ] The story defines the minimum conflict-handling behavior when two users try to update the same hosted markdown backlog close together.
   - [ ] The concurrent-use design preserves the markdown backlog as the durable source of truth rather than introducing hidden story state that can diverge.
-- Dependencies: BACKLOG-045, BACKLOG-068, BACKLOG-070, write-safety model, hosted session isolation decision.
+- Dependencies: BACKLOG-045, BACKLOG-068, BACKLOG-070, BACKLOG-084, write-safety model, hosted session isolation decision.
 - Links: current session request
-- Implementation notes: Original intake preserved in product terms: after hosted auth exists, allow concurrent usage by multiple users from the same server.
+- Implementation notes: Original intake preserved in product terms: after hosted auth exists, allow concurrent usage by multiple users from the same server. Follow-on project-integration sharing rules are now tracked in BACKLOG-084.
 
-### Epic 3, Future UX and workflow polish
-
-## BACKLOG-072 - Add current-sprint shortcut to `No sprint` chip
+## BACKLOG-080 - Split project integrations and Build credential flow
 - Status: Grooming
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-15
-- Updated: 2026-04-14T23:46:18.000Z
+- Updated: 2026-04-15T12:07:21.000Z
 - Due Date: 
 - Priority: P1
-- Effort: 1
+- Effort: 2
 - Sprint Assigned: 
 - Ready for Implementation?: No
 - Tech handoff owner: Unassigned
-- Summary: Attach a compact `+` action to the `No sprint` chip on an unassigned ticket so one click adds that ticket to the currently selected sprint.
-- Outcome / user value: Users can pull unscheduled work into the active sprint faster without opening the editor or using drag-and-drop for a simple add.
-- Scope notes: In scope, adding a compact current-sprint shortcut directly beside the `No sprint` chip on board ticket cards, using the currently selected sprint as the target, and updating the visible sprint label immediately after assignment. In scope, defining the blocked state when no valid current sprint is selected and keeping the shortcut limited to tickets that are currently unassigned. Out of scope, bulk sprint assignment, story-editor redesign, or changing how already assigned tickets move between sprints.
+- Summary: Keep the config-panel integrations and credential-aware Build vision split into focused child stories instead of one oversized delivery card.
+- Outcome / user value: Product and engineering can sequence project integration setup, auth validation, sharing, and Build handoff without bundling UI, security, and runtime concerns into one risky ticket.
+- Scope notes: In scope, splitting the vision into focused stories for the project integration catalog and config fields, config-panel rows and pass-through toggles, green and red auth validity states plus re-auth actions, invite-time sharing of project integrations, and Build-time credential handoff into containers. In scope, reusing the existing `Build` button entry-point story rather than duplicating it. Out of scope, carrying this full vision as one implementation card or finalizing secrets infrastructure on the parent story.
 - Acceptance criteria:
-  - [ ] A ticket that currently shows `No sprint` on the board also shows a compact adjacent `+` shortcut for adding it to the selected current sprint.
-  - [ ] Activating the shortcut assigns the ticket to the user's currently selected sprint in one action and updates the visible sprint chip immediately.
-  - [ ] If no valid current sprint is selected, the shortcut is hidden or clearly disabled so the action never fails silently.
-  - [ ] Tickets that already have a sprint assignment do not show the shortcut.
-  - [ ] The shortcut stays lightweight and does not require opening the story editor or dragging the ticket.
-- Dependencies: current sprint selector state, sprint assignment UI, empty or invalid current-sprint handling.
+  - [ ] The integration catalog and per-project config contract are tracked in a dedicated child story.
+  - [ ] The config-panel list and pass-through toggle behavior are tracked in a dedicated child story.
+  - [ ] The validity indicator and re-auth behavior are tracked in a dedicated child story.
+  - [ ] The invite-time sharing behavior for project integrations is tracked in a dedicated child story.
+  - [ ] The Build-time credential handoff into containers is tracked in a dedicated child story.
+  - [ ] The existing `Build` button placement story remains the UI entry slice rather than being duplicated here.
+- Dependencies: BACKLOG-078, BACKLOG-081, BACKLOG-082, BACKLOG-083, BACKLOG-084, BACKLOG-085.
 - Links: current session request
-- Implementation notes: Original intake preserved in product terms: add a compact shortcut joined to the `No sprint` chip so users can add a ticket to the current sprint directly from the card.
+- Implementation notes: Original intake preserved in product terms: the config panel should list project integrations and auths, including the Dave and Anna connections such as `gcloud`, `git`, `gh`, `ssh`, `gog`, Telegram and Discord bot and chat or channel identifiers, show whether each setup is valid, allow users to enable or disable passing those credentials, support re-auth, optionally share project credentials with invited users, and pass the enabled credentials into Build containers by path.
+
+## BACKLOG-081 - Define project integration catalog and config fields
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:07:21.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define which project integrations appear in config and what fields each one stores locally.
+- Outcome / user value: Users and engineers can see one clear list of supported integrations and required project-level setup instead of guessing which credentials and IDs the product expects.
+- Scope notes: In scope, defining the first supported project integration catalog for the config panel, including `gcloud`, `git`, `gh`, `ssh`, `gog`, Telegram bot name, Telegram chat ID, Discord bot name, and Discord channel ID, plus any additional build-critical integration that must follow the same row model. In scope, defining for each integration which fields are secret credentials versus non-secret identifiers, what is stored in the per-project local config, and which configured values count as required for Build handoff. Out of scope, final UI layout, live validation rendering, or container handoff behavior.
+- Acceptance criteria:
+  - [ ] The story defines the initial supported integration list shown in the config panel for v1.
+  - [ ] For each supported integration, the story defines the required project-level fields and distinguishes secret credential material from non-secret identifiers or labels.
+  - [ ] The story defines which values live in the per-project local config rather than in per-user layout state.
+  - [ ] The story defines which configured integration values are relevant to Build handoff and which are only descriptive or routing metadata.
+  - [ ] The resulting catalog is specific enough that the config-panel UI can render one predictable row shape per integration.
+- Dependencies: project config storage, Build integration requirements, invite-sharing model.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-082 - List project integrations in config with pass-through toggles
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:07:21.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Show each supported project integration in the config panel with a simple toggle for passing it into Build.
+- Outcome / user value: Users can control which configured project integrations are handed to Build without editing raw config or wondering what will be transferred.
+- Scope notes: In scope, one visible config-panel row for each supported project integration, a simple enable or disable toggle per row controlling whether that integration is passed to Build for the current project, and preserving stored configuration when the toggle is turned off. In scope, keeping the row treatment compact and readable even when the list includes both credentialed services and chat-routing integrations. Out of scope, green or red validity indicators, re-auth flows, or the actual build-runtime handoff.
+- Acceptance criteria:
+  - [ ] The config panel shows one row for each supported project integration from the approved catalog.
+  - [ ] Each row includes a simple on or off toggle controlling whether that integration's configured values are passed into Build for the current project.
+  - [ ] Turning an integration off prevents it from being marked for Build handoff without deleting its stored configuration values.
+  - [ ] The toggle state persists as part of that project's local config rather than a global app setting.
+  - [ ] The row layout remains understandable when multiple integrations are configured on one project.
+- Dependencies: BACKLOG-081, config-panel layout, per-project config write path.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-083 - Show green or red auth status with re-auth actions
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:07:21.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Show a realistic green or red status indicator for each project integration and give users a simple setup or re-auth action.
+- Outcome / user value: Users can tell at a glance whether the current project credentials are usable and can recover expired or invalid auth without digging through hidden config.
+- Scope notes: In scope, a realistic-looking green status LED when a project's current integration setup validates, a red LED when credentials are missing, invalid, or expired, and one simple affordance on the row to set up or re-auth that integration. In scope, updating the row state after setup or re-auth without making the whole config panel feel blocked. Out of scope, adding extra traffic-light states, forcing users into log inspection, or changing the supported integration catalog.
+- Acceptance criteria:
+  - [ ] Each supported project integration row can show a green status indicator when the current stored credentials or auth setup validate successfully.
+  - [ ] Each supported project integration row shows a red status indicator when the current stored credentials are invalid, missing, or expired.
+  - [ ] Each row exposes a visible setup or re-auth action so the user can repair an invalid integration from the same config surface.
+  - [ ] After a successful setup or re-auth, the row can update from red to green without requiring the user to rebuild the whole project context manually.
+  - [ ] A validation problem on one integration row does not prevent the rest of the config panel from remaining usable.
+- Dependencies: BACKLOG-081, per-integration validation hooks, auth and re-auth flows, config-row status rendering.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-084 - Share project integrations with invited users
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:07:21.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Let a project invite include shareable project integrations so collaborators can use the same build-relevant connections.
+- Outcome / user value: Teams can collaborate on one project without re-entering the same integration setup for every person or silently drifting onto incompatible credential configs.
+- Scope notes: In scope, defining how project-scoped integrations can be shared when one user invites another into the same project, which integrations are eligible to share, and how the receiving user sees shared integrations inside that project. In scope, clarifying how later rotation or revocation of a shared project credential affects invited users. Out of scope, a full enterprise permissions model, sharing integrations across unrelated projects, or assuming every configured credential must be auto-shared by default.
+- Acceptance criteria:
+  - [ ] The invite flow defines whether sharing project integrations is automatic, optional, or per-integration selectable, and that choice is explicit to the inviter.
+  - [ ] The story defines which kinds of project integrations can be shared with invited users and which kinds, if any, must remain non-shareable.
+  - [ ] When an integration is shared, the invited user can access that integration only inside the shared project context rather than as a new global credential.
+  - [ ] When an integration is not shared, the invited user sees a clear project-level unavailable or unconfigured state instead of silently inheriting access.
+  - [ ] The story defines how credential rotation or revocation propagates to users who received the shared project integration.
+- Dependencies: BACKLOG-070, BACKLOG-071, BACKLOG-081, project invite flow, project membership model.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-085 - Pass enabled project credentials into Build containers
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:07:21.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 3
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: When a user presses `Build`, transfer only the enabled project credentials into the build process and expose them to containers by path.
+- Outcome / user value: Users can launch builds with the right project integrations attached, without guessing what credentials were included or hand-copying secrets into the runtime.
+- Scope notes: In scope, using the current project's enabled integration settings to decide what credential material is handed to the build process, passing only the relevant enabled integrations, and instantiating build containers with file paths or equivalent mounted references to those credentials. In scope, surfacing a clear blocked state when required enabled credentials are invalid or unavailable. Out of scope, the initial placeholder-only button behavior already tracked separately, unrelated build-target selection, or a broader secrets-platform redesign.
+- Acceptance criteria:
+  - [ ] Pressing `Build` uses the current project's enabled integration settings to determine which credentials are handed to the build process.
+  - [ ] Disabled integrations are not transferred into the build runtime even if their configuration values remain stored on the project.
+  - [ ] The build process exposes credential material to containers through file paths or equivalent mounted references rather than raw inline values in the normal build input.
+  - [ ] If a required enabled integration is invalid, expired, or missing, the build flow blocks before container startup and explains which integration must be repaired.
+  - [ ] The Build handoff uses the same project-scoped integration config that is shown in the config panel and, where applicable, shared through the project invite model.
+- Dependencies: BACKLOG-068, BACKLOG-078, BACKLOG-081, BACKLOG-082, BACKLOG-083, BACKLOG-084, build runtime credential-mount contract.
+- Links: current session request
+- Implementation notes: Leave blank until the item is `Ready` or in execution
+
+## BACKLOG-086 - Define Daneel team-chat buttons for Telegram and Discord
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:32:39.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define visible Telegram and Discord buttons that let a user reach the team through Daneel from the product.
+- Outcome / user value: Users can contact the team in one step from the current product context instead of hunting for chat destinations or copying identifiers by hand.
+- Scope notes: In scope, defining where the Telegram and Discord buttons appear, when each button is shown, how Daneel routes the user into the correct team conversation, and what project-level chat configuration must exist first. In scope, clarifying whether the first release opens an external Telegram or Discord destination, starts an in-app Daneel relay, or offers both. In scope, defining the minimum unavailable-state behavior when one route is missing or misconfigured. Out of scope, broad two-way chat management inside the app, notification automation, or replacing the underlying integration setup already tracked elsewhere.
+- Acceptance criteria:
+  - [ ] The story defines the primary product surface where users see Telegram and Discord team-chat buttons.
+  - [ ] The story defines what configured Telegram and Discord fields Daneel needs before each button can be shown as available.
+  - [ ] The story defines what happens when a user clicks each button, including whether the first release opens an external destination, uses an in-app Daneel relay, or both.
+  - [ ] The story defines the minimum unavailable-state behavior when Telegram, Discord, or Daneel routing is not configured for the current project.
+  - [ ] The story defines whether the destination is a direct person chat, a team channel, or a project-scoped conversation and how that distinction is surfaced to the user.
+- Dependencies: BACKLOG-081, BACKLOG-082, BACKLOG-083, project integration config, Daneel routing contract.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: include buttons to chat via Telegram and Discord directly with the team via Daneel.
+
+### Epic 2, Agent-driven backlog maintenance
+
+## BACKLOG-087 - Set Paula reasoning level regardless of model
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T16:53:57.911Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Define Paula startup behavior so users can choose a reasoning level in system settings independently of the selected model.
+- Outcome / user value: Teams can tune speed versus depth intentionally from one visible settings path without being forced into a codex-model-specific choice.
+- Scope notes: In scope, defining one system-settings control for Paula startup reasoning level, applying that stored setting to future Paula launches regardless of which supported model is chosen, and clarifying how the UI handles models that support different reasoning levels. In scope, defining validation and fallback behavior when the stored reasoning level is unavailable for the chosen model, plus whether the setting affects only new Paula sessions or also already running ones. Out of scope, forcing a specific default model, per-message reasoning changes inside an active chat, separate per-project model policies, or changing non-Paula agents.
+- Acceptance criteria:
+  - [ ] The story defines one user-visible system-settings control for Paula reasoning level.
+  - [ ] The reasoning setting is not tied to a single codex-specific model choice and can be used with any supported Paula model.
+  - [ ] New Paula launches apply the stored reasoning level when the chosen model supports it.
+  - [ ] If the chosen model does not support the stored reasoning level, the product shows a clear validation or fallback path before launch instead of silently ignoring the mismatch.
+  - [ ] The story defines whether changing the reasoning setting affects only new Paula sessions and how that is surfaced to the user.
+  - [ ] The first release stays scoped to startup behavior and does not add live per-message reasoning changes.
+- Dependencies: Paula agent launch flow, system settings storage, model capability mapping, startup configuration read path.
+- Links: current session request
+- Implementation notes: Original intake updated in product terms: replace the codex-model-specific startup override with a model-agnostic reasoning-level setting that the user can choose regardless of model.
+
+### Epic 3, Future UX and workflow polish
+
+## BACKLOG-089 - Add shared chip toggles for Sprint, Owner, and Due
+- Status: Grooming
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T16:59:03.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: 
+- Ready for Implementation?: No
+- Tech handoff owner: Unassigned
+- Summary: Add one shared conjoined `+` or `X` chip action for Sprint, Owner, and Due so users can set or clear those fields directly from the board.
+- Outcome / user value: Users can claim work, remove mistaken metadata, or add a sprint-aligned due date in one chip-level action instead of opening the editor for routine field changes.
+- Scope notes: In scope, using one shared visual pattern across Sprint, Owner, and Due chips where a populated chip shows a conjoined `X` clear action and an empty chip shows a conjoined `+` add action in the same style family as the Sort and Project chips. In scope, clearing Sprint to `No Sprint`, clearing Owner to `None`, clearing Due back to empty, setting an empty Owner to the current configured user, and setting an empty Due date to the selected sprint's end date when dated sprint support is available. In scope, folding the existing `No sprint` quick-add behavior into this unified chip-toggle pattern instead of leaving Sprint as a one-off interaction. Out of scope, arbitrary owner picking from the board card, free-form due-date entry from the chip, bulk edits, or changing the backlog schema.
+- Acceptance criteria:
+  - [ ] A populated Sprint, Owner, or Due chip shows one conjoined `X` action that clears that field in one interaction, setting Sprint to `No Sprint`, Owner to `None`, or Due back to empty.
+  - [ ] An empty Sprint, Owner, or Due field shows one conjoined `+` action in the same visual pattern, with Sprint assigning the currently selected sprint, Owner assigning the current configured user, and Due assigning the selected sprint's end date when that end date is available.
+  - [ ] The chip action is a single-state toggle per field, so users see either `+` or `X` for that chip state rather than two separate buttons competing for space.
+  - [ ] The Owner `+` action never guesses silently: if no current user has been configured yet, the product surfaces a clear setup or blocked state tied to that user setting.
+  - [ ] The Due `+` action never invents a date silently: if no selected sprint end date is available yet, the product hides or blocks the shortcut in a clear predictable way.
+  - [ ] Existing sprint-removal protections for stories that should not lose their sprint assignment, including `Done` stories, remain intact.
+- Dependencies: BACKLOG-033, BACKLOG-058, BACKLOG-074, current sprint selector state, current-user config field, chip-style parity with Sort and Project controls.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: add conjoined `+` and `X` toggles to Sprint, Owner, and Due chips; clear populated values directly from the chip; let empty Owner assign to the current configured user; let empty Due assign to the sprint end date once dated sprint support exists; and keep the visual treatment aligned with the existing Sort and Project chips.
 
 ## Ready
 
@@ -492,6 +593,58 @@ Use for completed items with outcome notes.
 - Links: current session request
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
+## BACKLOG-069 - Add a lightweight user profile switcher
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-15T11:35:55.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 14
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Add a lightweight profile switcher so one user can move between named local contexts that each read and write a different config file.
+- Outcome / user value: Users can keep separate project lists and saved layouts for different working modes without those contexts overwriting each other.
+- Scope notes: In scope, a visible profile control that shows the active profile, switching between named profiles backed by separate config files, and restoring each profile's own recent project list and saved layout state after a switch or reload. In scope, a minimal v1 profile-creation rule: users can create a new profile by giving it a unique name in the switcher, which starts with an empty project list and default layout state. Out of scope, profile rename or delete flows, authentication, permissions, remote identity providers, or shared profile state between different people.
+- Acceptance criteria:
+  - [ ] The app shows a visible profile control with the active profile name and lets the user switch to another existing profile in one interaction.
+  - [ ] Switching profiles changes which config file the app reads and writes for profile-scoped preferences.
+  - [ ] Creating a new profile requires a unique user-visible name and starts that profile with an empty project list plus default layout state.
+  - [ ] Each profile keeps its own remembered project-file list without overwriting another profile's remembered projects.
+  - [ ] Each profile keeps its own saved layout state independently of other profiles across app reloads.
+  - [ ] The first release stays local and lightweight, without implying sign-in or shared multi-user identity behavior.
+- Dependencies: BACKLOG-065, profile-to-config mapping, profile-name validation, hosted config storage behavior.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: add a user profile button that initially just writes to a different config file and therefore remembers different project files and layouts.
+
+## BACKLOG-072 - Share the current backlog with another profile
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T11:35:55.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 14
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Share the current backlog into another existing profile so both profiles open the same stored file.
+- Outcome / user value: Two people on one project can reuse one backlog file across profiles instead of creating separate uploads that drift out of sync.
+- Scope notes: In scope, a visible `Share` action from the active backlog context, a target-picker listing existing profiles, adding the current backlog file reference to the selected profile's config, and keeping one shared underlying file reference rather than cloning the file. In scope, handling the already-shared case as a clear no-op so the target profile does not collect duplicate project entries. Out of scope, profile creation during sharing, sharing saved layouts or filters, permissions, live collaborative presence, or repairing already-diverged duplicate files.
+- Acceptance criteria:
+  - [ ] From the currently open backlog, the user can trigger a visible `Share` action and choose one existing target profile other than the active profile.
+  - [ ] Confirming the share adds the current backlog file reference to the selected target profile's config without requiring a second upload or creating a cloned stored file.
+  - [ ] After the user switches to the target profile, the shared backlog appears in that profile's project list and opens the same underlying backlog file.
+  - [ ] If one profile edits the shared backlog and saves it, the other profile later opens the updated content from that same shared file rather than a stale copy.
+  - [ ] If the target profile already has that backlog reference, the share action leaves the config unchanged and shows a clear duplicate-safe outcome.
+  - [ ] Sharing the backlog does not switch the active profile and does not copy layout, filter, or sprint-view preferences into the target profile.
+- Dependencies: BACKLOG-068, BACKLOG-069, profile-config persistence, shared backlog-file reference model.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: with the intermediate user profile switcher, I realise that each user will upload her own copy of a backlog file, and that if two users are working on the same project, the two files will get out of sync. So we need a share button which will add the current file to the config of the selected user
+
 ### Epic 2, Agent-driven backlog maintenance
 
 ## BACKLOG-012 - Route feedback-widget text into backlog intake
@@ -518,16 +671,180 @@ Use for completed items with outcome notes.
 - Links: current session request
 - Implementation notes: Leave blank until the item is `Ready` or in execution
 
-## BACKLOG-066 - Make Auto Groom respond visibly
+## BACKLOG-079 - Persist Paula chat across refresh and project switch
 - Status: Ready
 - Owner: Paula Product
 - Requester: current session
-- Date added: 2026-04-14
-- Updated: 2026-04-14T19:28:52.000Z
+- Date added: 2026-04-15
+- Updated: 2026-04-15T11:59:17.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
-- Sprint Assigned: Sprint 11
+- Sprint Assigned: 
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Keep each project's Paula chat available across page refresh, later return sessions, and project switches without losing the active-work warning on switch.
+- Outcome / user value: Users can return to the same Paula conversation after refresh or project changes instead of losing context, while still getting warned before leaving a project where Paula may still be working.
+- Scope notes: In scope, persisting Paula chat transcript and active-session state for the current user so the same project's chat can be restored after page refresh, later reopen, or switching away and back to that project. In scope, keeping chat state scoped to the relevant project so one project's Paula conversation does not overwrite another's. In scope, preserving the existing project-switch warning when Paula is still working on the current project. Out of scope, cross-user shared chat history, redesigning the Paula chat UI, or changing the text and behavior already defined for the active-work warning beyond keeping it in place.
+- Acceptance criteria:
+  - [ ] After a page refresh, the current project's Paula chat can be restored with its prior visible conversation state instead of resetting to an empty chat.
+  - [ ] If Paula is still working when the page is refreshed or later reopened, the restored chat shows that the session is still active rather than implying it already finished or disappeared.
+  - [ ] Switching to another project does not erase the current project's Paula chat history, and returning to that project restores the prior conversation state.
+  - [ ] Initiating a project switch while Paula is still working continues to show the existing `Paula may be still working` warning before the switch completes.
+  - [ ] Paula chat persistence stays scoped to the relevant project context so one project's messages do not appear under another project's chat by default.
+- Dependencies: BACKLOG-002, BACKLOG-039, Paula chat state persistence, page-refresh rehydration, per-project chat scoping.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: make Paula chat persistent across sessions, including page refresh and project switch, but keep the existing `Paula may be still working` notification when switching away from active work.
+
+### Epic 3, Future UX and workflow polish
+
+## BACKLOG-076 - Hide and restore kanban lanes
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T11:35:55.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 13
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Let users hide any kanban lane from the board with a lane-level `X` and restore visible lanes from one simple checkbox dropdown.
+- Outcome / user value: Users can reduce board clutter and focus on the workflow states that matter right now without changing any story data.
+- Scope notes: In scope, adding a compact `X` hide action to each visible kanban lane header, one simple lane-visibility dropdown listing all lanes with checkboxes, immediate board refresh when a lane is hidden or restored, and keeping the underlying ticket statuses unchanged. In scope, keeping the visible lanes in their normal left-to-right workflow order after any hide or restore action. Out of scope, custom lane reordering, markdown schema changes, saved named views, or changing mobile one-lane behavior already tracked elsewhere.
+- Acceptance criteria:
+  - [ ] Each visible kanban lane header shows a compact `X` action that removes only that lane from the current board view.
+  - [ ] Hiding a lane updates the board immediately without changing any ticket's status, sprint assignment, or backlog content.
+  - [ ] The board provides one simple dropdown for lane visibility, and that dropdown lists every kanban lane with a checkbox showing whether the lane is currently visible.
+  - [ ] Checking or unchecking a lane in the dropdown shows or hides that lane immediately, and the checkbox state always matches the current board view.
+  - [ ] Hidden lanes can be restored from the dropdown without reloading the backlog or resetting the current sprint and filter context.
+  - [ ] The UI prevents the user from hiding the final remaining visible lane so the board never collapses into an empty state.
+- Dependencies: kanban lane header actions, lane-visibility state model, checkbox dropdown control, board layout recalculation.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: give each kanban lane an `X` to remove it from view and add a simple checkbox dropdown so users can choose which lanes are shown or hidden.
+
+## BACKLOG-077 - Show Paula sprint-goal summary by selector
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T11:35:55.000Z
+- Due Date: 
+- Priority: P2
+- Effort: 2
+- Sprint Assigned: Sprint 13
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Show a one-line Paula-generated summary beside the sprint selector that explains the selected sprint's goals in plain language.
+- Outcome / user value: Users can understand the intent of the selected sprint at a glance without mentally reconstructing it from ticket titles alone.
+- Scope notes: In scope, one concise plain-language summary beside the sprint selector for the currently selected sprint, generating the summary from the stories assigned to that sprint, updating the visible summary when the selected sprint changes, and showing a calm empty or failure state when a meaningful summary cannot be produced. In scope, keeping the treatment compact enough to remain secondary to the selector rather than turning into a full sprint brief. Out of scope, multi-paragraph sprint plans, editing the summary manually in the board UI, storing the summary as a new markdown field, or replacing detailed grooming notes and sprint planning flows.
+- Acceptance criteria:
+  - [ ] When a user selects a sprint, the UI shows one concise summary line beside the sprint selector that describes the sprint's goals in plain language.
+  - [ ] The summary is generated from the work currently assigned to that sprint rather than hard-coded static text.
+  - [ ] Changing the selected sprint updates the visible summary so it matches the newly selected sprint.
+  - [ ] If the selected sprint has no assigned work or does not support a meaningful goal summary, the UI shows a clear calm empty state instead of inventing misleading goals.
+  - [ ] If Paula cannot generate the summary, the UI shows a visible failure state that leaves the sprint selector usable.
+  - [ ] The summary remains a compact adjacent line and does not push the sprint selector into a separate expanded panel or workflow.
+- Dependencies: current sprint selector state, selected-sprint ticket aggregation, Paula summary generation flow, summary-line rendering, empty-sprint handling.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: add a Paula-generated summary line next to the sprint selector that explains the selected sprint's goals in plain language.
+
+### Epic 1, Markdown-first backlog workflow
+
+## BACKLOG-075 - Define canonical backlog template and migrations
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T11:35:55.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 13
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Define one canonical markdown guide for the backlog template and way of working, link it from `AGENTS.md`, reuse it for new projects, and require migration notes whenever the template evolves.
+- Outcome / user value: Agents and new projects start from the same backlog rules and template, reducing schema drift, missed instructions, and unsafe edits on older backlog files.
+- Scope notes: In scope, documenting the current backlog template and working rules in one canonical markdown file, linking that guide from `AGENTS.md` so agents discover it before backlog work, using the same template as the starting point for new projects, and adding explicit migration notes plus agent instructions whenever template changes affect older backlog versions. In scope, keeping migration guidance focused on safe adoption steps rather than silent file rewrites. Out of scope, changing the current backlog schema as part of this story, introducing alternate backlog formats, or adding hidden metadata outside the markdown source of truth.
+- Acceptance criteria:
+  - [ ] The repo has one canonical markdown document that defines the current backlog template, required fields, lane structure, and working rules for agents.
+  - [ ] `AGENTS.md` links to that canonical guide and tells agents to follow it for backlog work.
+  - [ ] Creating a new project backlog uses the same documented template rather than a separate divergent starter.
+  - [ ] When the backlog template changes, the canonical guide is updated with migration notes that explain what changed, which older backlogs are affected, and the steps agents must follow before editing them.
+  - [ ] The migration guidance tells agents how to handle older backlog files without inventing unsupported schema variants or skipping required steps.
+- Dependencies: `AGENTS.md` backlog instructions, canonical backlog template guide, new-project backlog bootstrap path, older backlog compatibility expectations.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: define the current backlog template and way of working in markdown, link it from `AGENTS.md`, use it as the basis for new projects, and include migration notes for agents whenever the template changes.
+
+## BACKLOG-088 - Make `Ungroomed` show Inbox and Grooming
+- Status: Ready
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T12:43:08.000Z
+- Due Date: 
+- Priority: P2
+- Effort: 1
+- Sprint Assigned: 
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Make the `Ungroomed` summary click surface both `Inbox` and `Grooming` instead of exposing only the `Inbox` lane.
+- Outcome / user value: Users can review all not-yet-ready work in one click instead of missing items that already reached grooming but are still ungroomed for implementation.
+- Scope notes: In scope, changing the `Ungroomed` preset destination so it shows stories in `Inbox` or `Grooming`, refreshing the board to that combined view, and keeping the behavior stable even though the general filter controls do not support OR combinations today. In scope, preserving the existing meaning of `Ungroomed` as work that is not yet implementation-ready. Out of scope, adding a generic OR-capable filter builder, redefining `Ready`, or changing unrelated summary-click presets.
+- Acceptance criteria:
+  - [ ] Clicking `Ungroomed` surfaces stories with status `Inbox` and stories with status `Grooming` in the same resulting board view.
+  - [ ] The resulting view no longer behaves like an `Inbox`-only shortcut.
+  - [ ] The preset keeps a stable, predictable result on repeated clicks instead of accumulating conflicting filter state.
+  - [ ] The first release solves this combined `Ungroomed` view without requiring a new user-facing generic OR filter control.
+  - [ ] Existing summary-click presets outside `Ungroomed` keep their current behavior.
+- Dependencies: BACKLOG-064, board filtering model, summary-click preset handling, lane emphasis behavior.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: clicking `Ungroomed` currently exposes `Inbox` only, but it should surface `Inbox` and `Grooming` together even though the current filter model does not support OR operations.
+
+## In Progress
+
+### Epic 12, Sprint 12 polish and Paula flow
+
+## BACKLOG-074 - Add current-sprint shortcut to `No sprint` chip
+- Status: In Progress
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T16:51:57.160Z
+- Due Date: 
+- Priority: P1
+- Effort: 1
+- Sprint Assigned: Sprint 12
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Attach a compact `+` action to the `No sprint` chip on an unassigned ticket so one click adds that ticket to the currently selected sprint.
+- Outcome / user value: Users can pull unscheduled work into the active sprint faster without opening the editor or using drag-and-drop for a simple add.
+- Scope notes: In scope, adding a compact current-sprint shortcut visually joined to the `No sprint` chip on board ticket cards, using the currently selected sprint as the target, and updating the visible sprint chip immediately after assignment. In scope, limiting the shortcut to tickets that are currently unassigned and hiding it when no valid current sprint exists. Out of scope, bulk sprint assignment, story-editor redesign, drag-and-drop replacement, or changing how already assigned tickets move between sprints.
+- Acceptance criteria:
+  - [ ] Define acceptance criteria
+- Dependencies: current sprint selector state, sprint assignment UI, sprint chip rendering, empty or invalid current-sprint handling.
+- Links: current session request
+- Implementation notes:
+
+## Testing
+
+## Review
+
+## Done
+
+### Epic 12, Sprint 12 polish and Paula flow
+
+## BACKLOG-066 - Make Auto Groom respond visibly
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-15T16:48:02.164Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 12
 - Ready for Implementation?: Yes
 - Tech handoff owner: Ben
 - Summary: Make `Auto Groom` produce a visible result every time instead of appearing to do nothing.
@@ -541,18 +858,18 @@ Use for completed items with outcome notes.
   - [ ] The implementation stays on the existing Paula grooming path rather than creating a separate hidden flow for `Auto Groom`.
 - Dependencies: BACKLOG-034, BACKLOG-054, Paula agent launch flow, sprint context handoff, visible action feedback.
 - Links: current session request
-- Implementation notes: Original intake preserved verbatim: bug: auto Groom does nothing
+- Implementation notes: 
 
 ## BACKLOG-067 - Submit long chat input without terminal paging trap
-- Status: Ready
+- Status: Done
 - Owner: Paula Product
 - Requester: current session
 - Date added: 2026-04-14
-- Updated: 2026-04-14T19:28:52.000Z
+- Updated: 2026-04-15T15:00:16.000Z
 - Due Date: 
 - Priority: P1
 - Effort: 2
-- Sprint Assigned: Sprint 11
+- Sprint Assigned: Sprint 12
 - Ready for Implementation?: Yes
 - Tech handoff owner: Ben
 - Summary: Fix long Paula chat submissions that appear to send but remain stuck in terminal paging until the user presses Return again at the bottom of stdin.
@@ -566,15 +883,58 @@ Use for completed items with outcome notes.
   - [ ] After the long prompt is submitted, the chat shows the same observable post-send behavior as a normal successful submission instead of leaving the message in a half-sent state.
 - Dependencies: Paula chat composer, send action state, terminal stdin handoff, long-input handling.
 - Links: current session request
-- Implementation notes: Original intake preserved verbatim: on very long text input in the chat, pressing Send/return starts the animation but nothing else happens. On switching to the terminal, the stdin needs to be paged through and then it's clear that it has not been submitted. Pressing return at the bottom of the stdin then submits the prompt
+- Implementation notes: Long Paula chat submissions now use bracketed paste with chunked PTY writes and a trailing return so one send action completes the full submission without leaving the prompt stuck in terminal paging.
 
-## In Progress
+## BACKLOG-073 - Make `Send` queue-aware and direct when idle
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T15:00:16.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 12
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Replace the separate queue action with a single `Send` action that sends straight through when Paula is idle and queues only when Paula is already working.
+- Outcome / user value: Users get one predictable primary action instead of choosing between overlapping send and queue controls, while still being able to line up the next message when Paula is busy.
+- Scope notes: In scope, renaming the default composer action to `Send`, removing the separate queue button, sending directly to the terminal when there is no currently working agent, and preserving the existing queued-preview behavior when Paula is already working. In scope, replacing the queued item's `Stop waiting and send` button with a compact sideways send-arrow action in the existing preview area. Out of scope, redesigning multi-item queue behavior, changing message ordering rules beyond this idle-vs-working split, or broader composer restyling outside the relevant controls.
+- Acceptance criteria:
+  - [ ] The composer shows one primary `Send` action and no separate queue button.
+  - [ ] When no Paula agent is currently working, activating `Send` sends the message directly to the terminal flow instead of creating a queued preview first.
+  - [ ] When a Paula agent is currently working, activating `Send` queues the message in the existing preview area rather than attempting an immediate terminal send.
+  - [ ] A queued message still exposes an explicit action to stop waiting and send immediately.
+  - [ ] The queued-message send action uses a sideways send-arrow affordance instead of the text button `Stop waiting and send`.
+  - [ ] The idle and working states are distinct enough that the same `Send` action behaves predictably and does not leave the user unsure whether the message was sent now or queued for later.
+- Dependencies: BACKLOG-063, Paula chat composer, working-agent state detection, queued-message preview UI, send control styling.
+- Links: current session request
+- Implementation notes: The composer now has one Send action. It sends directly when Paula is idle, queues while Paula is working, and queued previews use a compact sideways send-arrow action for immediate send.
 
-## Testing
-
-## Review
-
-## Done
+## BACKLOG-078 - Add placeholder `Build` button below Plan/Groom
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-15
+- Updated: 2026-04-15T15:00:16.000Z
+- Due Date: 
+- Priority: P2
+- Effort: 1
+- Sprint Assigned: Sprint 12
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Add one prominent placeholder `Build` button below the Plan/Groom panel that shows a gentle not-yet-implemented notice when clicked.
+- Outcome / user value: Users can see the intended next-step action in the workflow and get calm feedback that `Build` is not available yet instead of wondering whether the control is missing or broken.
+- Scope notes: In scope, adding a single visible `Build` button directly below the existing Plan/Groom panel, matching the panel width while leaving clear visual separation from the panel, and showing a gentle informational notice when the button is pressed. In scope, keeping this release explicitly placeholder-only so the button does not imply that a real build flow exists yet. Out of scope, launching builds, configuring build targets, showing build status, or wiring this button into any execution backend.
+- Acceptance criteria:
+  - [ ] The UI shows a visible `Build` button directly below the Plan/Groom panel.
+  - [ ] The `Build` button matches the width of the Plan/Groom panel while remaining visually separated from it.
+  - [ ] Activating `Build` does not start any build flow or change backlog state.
+  - [ ] Activating `Build` shows a gentle user-facing notice that the functionality is not implemented yet.
+  - [ ] The not-implemented notice uses the app's normal lightweight feedback pattern and does not trap the user in a blocking flow.
+- Dependencies: Plan/Groom panel layout, button styling for action surfaces, lightweight notification pattern.
+- Links: current session request
+- Implementation notes: The current sprint panel now shows a full-width placeholder Build button below Plan and Groom, and clicking it shows a lightweight not-yet-implemented notice without changing backlog state.
 
 ### Epic 2, Agent-driven backlog maintenance
 
@@ -1335,6 +1695,31 @@ Use for completed items with outcome notes.
 - Links: current session request
 - Implementation notes: Validated in-app behavior and build. Blocked items keep lane context by using their underlying lane for grouping, stay visually flagged as blocked, and are counted separately in the top bar.
 
+## BACKLOG-056 - Capture blocker reason when a ticket is marked blocked
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T15:11:00.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 11
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Open Paula chat with a blocker-reason prompt as soon as a user marks a ticket blocked so the team captures context while it is fresh.
+- Outcome / user value: Users can explain why work is blocked at the moment they mark it blocked instead of leaving the team without enough context to act.
+- Scope notes: In scope, triggering the existing Paula chat flow from the blocked action, carrying the blocked ticket's identity into the first prompt, and capturing the blocker reason through that chat path. In scope, letting the user dismiss the prompt without undoing the blocked state. Out of scope, making the blocker reason a required markdown field, inventing a separate modal, or redesigning blocked-state visuals already tracked elsewhere.
+- Acceptance criteria:
+  - [ ] When a user marks a ticket blocked, the existing Paula chat opens automatically from that action.
+  - [ ] The first Paula prompt clearly asks what is blocking the selected ticket and includes enough ticket context that the user knows which ticket they are describing.
+  - [ ] If the user enters a blocker reason, the response is captured through the existing Paula chat path without requiring a second manual launch.
+  - [ ] If the user dismisses or ignores the prompt, the ticket remains blocked and the UI does not silently clear that state.
+  - [ ] The blocked flow stays calm and lightweight, adding context capture without forcing a separate form before the status change completes.
+- Dependencies: blocked-ticket interaction, Paula chat window, blocked-state action wiring.
+- Links: current session request
+- Implementation notes: Original intake preserved verbatim: when user marks a ticket as blocked, pop up the chat window and ask what is blocking?
+
 ### Epic 3, Future UX and workflow polish
 
 ## BACKLOG-003 - Add a Save layout button beside filters
@@ -1426,6 +1811,57 @@ Use for completed items with outcome notes.
 - Dependencies: Sprint assignment UI, drag-and-drop sprint behavior, done-story protection rules.
 - Links: current session request
 - Implementation notes: Reviewed in another Olivia pass, still Ready, no scope change.
+
+## BACKLOG-064 - Preset board filters from top-header summary clicks
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T15:11:00.000Z
+- Due Date: 
+- Priority: P1
+- Effort: 2
+- Sprint Assigned: Sprint 11
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Make the top-header `Open`, `Blocked`, `Done`, `Epics`, and `Unassigned` summaries clickable so each one applies the matching board filters and refreshes the kanban view.
+- Outcome / user value: Users can jump directly from high-level board counts to the relevant slice of work without manually rebuilding filters every time.
+- Scope notes: In scope, making the top-header summary items clickable, applying a predefined filter set for each clicked summary, refreshing the visible kanban state immediately, and emphasizing only the lanes needed for that filtered view while minimizing lanes that are not relevant. In scope, preserving any selected sprint when the preset does not need to change sprint context, except when the `Unassigned` preset needs to surface unassigned work directly. Out of scope, custom user-defined presets, changing backlog data, or redesigning the header summary labels themselves.
+- Acceptance criteria:
+  - [ ] Clicking `Open` applies a preset that shows non-done work and refreshes the kanban immediately.
+  - [ ] Clicking `Blocked` applies a preset that shows blocked work and refreshes the kanban immediately while preserving blocked items in their lane context.
+  - [ ] Clicking `Done` applies a preset that shows completed work and refreshes the kanban immediately.
+  - [ ] Clicking `Epics` applies a preset that surfaces epic-oriented board context and refreshes the kanban immediately.
+  - [ ] Clicking `Unassigned` applies a preset that surfaces unassigned work immediately without requiring the user to build the filter set manually.
+  - [ ] After any preset is applied, lanes relevant to the resulting view are visually emphasized and lanes not needed for that view are minimized rather than competing equally for space.
+  - [ ] Repeated clicks on the same header item produce a stable, predictable board view instead of accumulating conflicting filter state.
+- Dependencies: top-header summary controls, board filtering model, kanban refresh behavior, lane emphasis behavior, unassigned-work filter behavior, BACKLOG-017, BACKLOG-037.
+- Links: current session request
+- Implementation notes: Original intake preserved in product terms: clicking on Open, Blocked, Done, Epics, and Unassigned in the top header should preset the filters, refresh the kanban, maximize the lanes that matter for that view, and minimize the lanes that do not.
+
+## BACKLOG-065 - Include project list in saved user layout
+- Status: Done
+- Owner: Paula Product
+- Requester: current session
+- Date added: 2026-04-14
+- Updated: 2026-04-14T15:11:00.000Z
+- Due Date: 
+- Priority: P2
+- Effort: 1
+- Sprint Assigned: Sprint 11
+- Ready for Implementation?: Yes
+- Tech handoff owner: Ben
+- Summary: Extend `Save layout` so it restores the user's project list, filters, sorting, and current sprint along with the saved board layout.
+- Outcome / user value: Users can return to the same working context without rebuilding their project list, board filters, sort order, or sprint focus after leaving and coming back.
+- Scope notes: In scope, saving the current user's project list, active filters, current sorting, and current sprint selection as part of the existing per-user layout payload, restoring that state on the next visit, and keeping the behavior scoped to that same user only. In scope, treating this as an extension of the existing single saved layout rather than a separate saved-preferences feature. Out of scope, shared saved layouts across users, multiple named saved layouts, or changes to the backlog markdown file itself.
+- Acceptance criteria:
+  - [ ] Activating `Save layout` stores the current user's project list, active filters, current sorting, and current sprint together with the rest of the saved layout state.
+  - [ ] When the same user returns later, the app restores the saved project list, filters, sorting, and current sprint alongside the previously saved layout settings.
+  - [ ] The saved project list, filters, sorting, and sprint state remain scoped to the current user and do not overwrite another user's saved context.
+  - [ ] If one or more of those saved state elements do not exist yet, the app keeps its current fallback behavior instead of failing to restore the layout.
+- Dependencies: BACKLOG-003, per-user preference storage, project list persistence model, board filter persistence, sorting persistence, sprint selection persistence.
+- Links: current session request
+- Implementation notes: Follow-up to the shipped `Save layout` behavior so saved board context also includes the user's project list, active filters, sorting, and current sprint.
 
 ### Epic 1, Markdown-first backlog workflow
 

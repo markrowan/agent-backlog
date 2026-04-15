@@ -77,10 +77,12 @@ Grooming rules:
 - Keep titles short, concrete, and outcome-oriented.
 - Put raw requests in `Inbox`.
 - Use `Grooming` for stories with unresolved scope, dependencies, or ambiguity.
-- When you groom a story, set its `Status` to match the outcome.
-- If scope is still unclear or blocked, keep it in `Grooming`.
-- If the story is groomed to a crisp, implementation-ready state,
-  move it to `Ready` as the default policy.
+- While you are actively grooming a story, set its `Status` to
+  `Grooming`.
+- After grooming, if scope is clear and nothing is blocked, move
+  the story to `Ready`.
+- After grooming, if scope is still unclear or anything is
+  blocked, keep the story in `Grooming`.
 - Only mark a story `Ready` when scope is crisp, acceptance criteria are testable, and `Ready for Implementation?: Yes`.
 - When moving a story to `Ready`, strengthen weak wording, remove vague UX language, and make the acceptance criteria observable.
 - Group related stories under the right epic heading.
