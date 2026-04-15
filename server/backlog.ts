@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
@@ -74,6 +75,18 @@ Use for completed items with outcome notes.
 \`\`\`
 
 ---`;
+
+const CANONICAL_TEMPLATE_DOC_PATH = path.resolve(process.cwd(), "docs/BACKLOG_STRUCTURE.md");
+
+function loadCanonicalTemplateBlock() {
+  try {
+    const guide = readFileSync(CANONICAL_TEMPLATE_DOC_PATH, "utf8");
+    const match = guide.match(/<!-- CANONICAL_BACKLOG_TEMPLATE_START -->\s*(?:```|~~~)md\n([\s\S]*?)\n(?:```|~~~)\s*<!-- CANONICAL_BACKLOG_TEMPLATE_END -->/);
+    return match?.[1]?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
 
 function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, "\n");
@@ -347,6 +360,11 @@ export function serializeBacklog(document: BacklogDocument): string {
 
 export function createBacklogTemplate(projectName: string) {
   const safeName = projectName.trim() || "backlog";
+  const canonicalTemplate = loadCanonicalTemplateBlock();
+  if (canonicalTemplate) {
+    return canonicalTemplate.replaceAll("{{PROJECT_NAME}}", safeName);
+  }
+
   return `# ${safeName}
 
 This file is the durable repo backlog for \`${safeName}\`.
@@ -370,7 +388,13 @@ Use for items Paula is clarifying, scoping, or prioritizing.
 Use for items Paula has scoped well enough for implementation. Every \`Ready\` item should have \`Ready for Implementation?: Yes\` plus clear scope notes and acceptance criteria.
 
 ### In Progress
-Use for items currently being implemented, reviewed, or deployed.
+Use for items currently being implemented.
+
+### Testing
+Use for items under active test or verification.
+
+### Review
+Use for items waiting on review or sign-off.
 
 ### Done
 Use for completed items with outcome notes.
@@ -383,7 +407,8 @@ Use for completed items with outcome notes.
 - Owner: Paula Product
 - Requester: Name or source thread
 - Date added: YYYY-MM-DD
-- Updated: YYYY-MM-DD
+- Updated: YYYY-MM-DDTHH:MM:SS.sssZ
+- Due Date: YYYY-MM-DD
 - Priority: P0 | P1 | P2 | P3
 - Effort: 1 | 2 | 3
 - Sprint Assigned: Sprint name
@@ -408,6 +433,10 @@ Use for completed items with outcome notes.
 ## Ready
 
 ## In Progress
+
+## Testing
+
+## Review
 
 ## Done
 `;
