@@ -1268,6 +1268,10 @@ function App() {
       setExpandedLane(null);
       return;
     }
+    if (selectedStatus === "Blocked") {
+      setExpandedLane(null);
+      return;
+    }
     setExpandedLane(selectedStatus as Status);
   }, [selectedStatus]);
 
@@ -2267,6 +2271,7 @@ function App() {
     }
     if (kind === "blocked") {
       setSelectedStatus("Blocked");
+      setExpandedLane(null);
       return;
     }
     if (kind === "done") {
@@ -2349,6 +2354,13 @@ function App() {
     return "";
   }
 
+  const isBlockedFilterActive = activeHeaderPreset === "blocked" || selectedStatus === "Blocked";
+  const usesSubsetLaneFiltering = activeHeaderPreset === "open"
+    || activeHeaderPreset === "assigned"
+    || activeHeaderPreset === "ungroomed"
+    || activeHeaderPreset === "unassigned"
+    || isBlockedFilterActive;
+
   const visibleStatuses = activeHeaderPreset === "ungroomed"
     ? ["Inbox", "Grooming"] satisfies Status[]
     : activeHeaderPreset === "open" || activeHeaderPreset === "assigned"
@@ -2356,7 +2368,7 @@ function App() {
       : STATUSES.filter((status) => status !== "Blocked");
 
   const laneVisibilityStatuses = visibleStatuses.filter((status) => {
-    if (activeHeaderPreset !== "open" && activeHeaderPreset !== "assigned" && activeHeaderPreset !== "ungroomed" && activeHeaderPreset !== "unassigned") {
+    if (!usesSubsetLaneFiltering) {
       return true;
     }
     return (grouped.get(status)?.size ?? 0) > 0;
@@ -2367,7 +2379,7 @@ function App() {
   const renderedStatuses = expandedLane
     ? [expandedLane]
     : visibleLaneStatuses;
-  const isHeaderSubsetMode = !expandedLane && (activeHeaderPreset === "open" || activeHeaderPreset === "assigned" || activeHeaderPreset === "ungroomed" || activeHeaderPreset === "unassigned");
+  const isHeaderSubsetMode = !expandedLane && usesSubsetLaneFiltering;
   const canHideAnotherLane = visibleLaneStatuses.length > 1;
 
   function toggleLaneVisibility(status: Status, nextVisible: boolean) {
