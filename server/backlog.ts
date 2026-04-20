@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { Storage } from "@google-cloud/storage";
 import {
   BacklogDocument,
   BacklogItem,
@@ -11,10 +12,12 @@ import {
   STATUSES,
   Status,
 } from "./types.js";
+import { hostingConfig } from "./hosting.js";
 
 export const BACKLOG_FILE = process.env.BACKLOG_FILE?.trim() || null;
 
-let currentBacklogFile: string | null = BACKLOG_FILE;
+let currentBacklogFile: string | null = hostingConfig.hostedMode ? hostingConfig.backlogObjectPath : BACKLOG_FILE;
+const gcsStorage = hostingConfig.hostedMode ? new Storage() : null;
 
 const LANE_HEADINGS = new Set(STATUSES.map((status) => `## ${status}`));
 
@@ -292,7 +295,12 @@ export function getBacklogFile() {
 }
 
 export function setBacklogFile(nextPath: string | null) {
-  currentBacklogFile = nextPath?.trim() || null;
+  const normalized = nextPath?.trim() || null;
+  if (hostingConfig.hostedMode) {
+    currentBacklogFile = normalized || hostingConfig.backlogObjectPath;
+    return;
+  }
+  currentBacklogFile = normalized;
 }
 
 function requireBacklogFile() {
@@ -479,14 +487,13 @@ export async function createBacklogInFolder(folderPath: string) {
 
 export async function readBacklogFile() {
   const filePath = requireBacklogFile();
-  const raw = await fs.readFile(filePath, "utf8");
-  const stat = await fs.stat(filePath);
-  const document = parseBacklog(raw);
+  const source = await readBacklogSource(filePath);
+  const document = parseBacklog(source.raw);
   return {
-    path: filePath,
-    displayName: backlogDisplayName(document, filePath),
-    version: stat.mtimeMs,
-    raw,
+    path: source.path,
+    displayName: backlogDisplayName(document, source.path),
+    version: source.version,
+    raw: source.raw,
     document,
   };
 }
@@ -502,20 +509,11 @@ export async function writeBacklog(document: BacklogDocument, expectedVersion: n
 
   const serialized = serializeBacklog(document);
   const filePath = requireBacklogFile();
-  const directory = path.dirname(filePath);
-  const basename = path.basename(filePath);
-  const tempPath = path.join(directory, `.${basename}.tmp`);
-  const backupPath = path.join(directory, `.${basename}.bak`);
-
-  await fs.writeFile(tempPath, serialized, "utf8");
-  await fs.copyFile(filePath, backupPath);
-  await fs.rename(tempPath, filePath);
-
-  const stat = await fs.stat(filePath);
+  const version = await writeBacklogSource(filePath, serialized, Math.trunc(expectedVersion));
   return {
     path: filePath,
     displayName: backlogDisplayName(document, filePath),
-    version: stat.mtimeMs,
+    version,
     document: parseBacklog(serialized),
   };
 }
@@ -544,6 +542,37 @@ export async function updateBacklogTitle(nextTitle: string, expectedVersion: num
 
 export async function restorePreviousBacklogVersion() {
   const filePath = requireBacklogFile();
+  if (isGcsPath(filePath)) {
+    const [bucketName, objectName] = splitGcsPath(filePath);
+    const backupFile = requireGcsStorage().bucket(bucketName).file(`${objectName}.bak`);
+
+    const [exists] = await backupFile.exists();
+    if (!exists) {
+      const error = new Error("No reversible Paula backlog edit exists yet.") as Error & { code?: string };
+      error.code = "NO_BACKUP_AVAILABLE";
+      throw error;
+    }
+
+    const [backupRawBuffer] = await backupFile.download();
+    const backupRaw = backupRawBuffer.toString("utf8");
+    if (!backupRaw.trim()) {
+      const error = new Error("The saved backup is empty and cannot be restored.") as Error & { code?: string };
+      error.code = "NO_BACKUP_AVAILABLE";
+      throw error;
+    }
+
+    const targetFile = requireGcsStorage().bucket(bucketName).file(objectName);
+    await backupFile.copy(targetFile);
+    const [metadata] = await targetFile.getMetadata();
+
+    return {
+      path: filePath,
+      displayName: path.basename(filePath),
+      version: Number(metadata.generation ?? Date.parse(String(metadata.updated ?? "")) ?? Date.now()),
+      document: parseBacklog(backupRaw),
+    };
+  }
+
   const directory = path.dirname(filePath);
   const basename = path.basename(filePath);
   const backupPath = path.join(directory, `.${basename}.bak`);
@@ -584,6 +613,111 @@ const SPRINT_SUMMARY_STOP_WORDS = new Set([
   "makes", "making", "keep", "keeps", "keeping", "fix", "fixes", "fixed", "support", "supports", "supporting",
   "update", "updates", "updating", "visible", "calm", "clear", "meaningful",
 ]);
+
+function requireGcsStorage() {
+  if (!gcsStorage) {
+    throw new Error("Google Cloud Storage is not configured.");
+  }
+  return gcsStorage;
+}
+
+function isGcsPath(filePath: string) {
+  return filePath.startsWith("gs://");
+}
+
+function splitGcsPath(filePath: string) {
+  const normalized = filePath.replace(/^gs:\/\//, "");
+  const slashIndex = normalized.indexOf("/");
+  if (slashIndex <= 0) {
+    throw new Error("Hosted backlog storage is missing a bucket or object path.");
+  }
+  return [normalized.slice(0, slashIndex), normalized.slice(slashIndex + 1)] as const;
+}
+
+function defaultHostedBacklogName(objectName: string) {
+  const baseName = path.basename(objectName).replace(/\.md$/i, "");
+  const label = baseName.replace(/[-_]+/g, " ").trim();
+  return label || "Hosted backlog";
+}
+
+async function ensureHostedBacklogExists(filePath: string) {
+  const [bucketName, objectName] = splitGcsPath(filePath);
+  const file = requireGcsStorage().bucket(bucketName).file(objectName);
+  const [exists] = await file.exists();
+  if (exists) {
+    return file;
+  }
+
+  try {
+    await file.save(createBacklogTemplate(defaultHostedBacklogName(objectName)), {
+      resumable: false,
+      preconditionOpts: { ifGenerationMatch: 0 },
+      contentType: "text/markdown; charset=utf-8",
+    });
+  } catch (error) {
+    if ((error as Error & { code?: number }).code !== 412) {
+      throw error;
+    }
+  }
+
+  return file;
+}
+
+async function readBacklogSource(filePath: string) {
+  if (!isGcsPath(filePath)) {
+    const raw = await fs.readFile(filePath, "utf8");
+    const stat = await fs.stat(filePath);
+    return {
+      path: filePath,
+      raw,
+      version: stat.mtimeMs,
+    };
+  }
+
+  const file = await ensureHostedBacklogExists(filePath);
+  const [rawBuffer] = await file.download();
+  const [metadata] = await file.getMetadata();
+  return {
+    path: filePath,
+    raw: rawBuffer.toString("utf8"),
+    version: Number(metadata.generation ?? Date.parse(String(metadata.updated ?? "")) ?? Date.now()),
+  };
+}
+
+async function writeBacklogSource(filePath: string, serialized: string, expectedVersion: number) {
+  if (!isGcsPath(filePath)) {
+    const directory = path.dirname(filePath);
+    const basename = path.basename(filePath);
+    const tempPath = path.join(directory, `.${basename}.tmp`);
+    const backupPath = path.join(directory, `.${basename}.bak`);
+
+    await fs.writeFile(tempPath, serialized, "utf8");
+    await fs.copyFile(filePath, backupPath);
+    await fs.rename(tempPath, filePath);
+
+    const stat = await fs.stat(filePath);
+    return stat.mtimeMs;
+  }
+
+  const [bucketName, objectName] = splitGcsPath(filePath);
+  const bucket = requireGcsStorage().bucket(bucketName);
+  const liveFile = await ensureHostedBacklogExists(filePath);
+  const backupFile = bucket.file(`${objectName}.bak`);
+  const [currentContents] = await liveFile.download();
+
+  await backupFile.save(currentContents, {
+    resumable: false,
+    contentType: "text/markdown; charset=utf-8",
+  });
+  await liveFile.save(serialized, {
+    resumable: false,
+    preconditionOpts: { ifGenerationMatch: expectedVersion },
+    contentType: "text/markdown; charset=utf-8",
+  });
+
+  const [metadata] = await liveFile.getMetadata();
+  return Number(metadata.generation ?? Date.parse(String(metadata.updated ?? "")) ?? Date.now());
+}
 
 function sentenceCase(value: string) {
   const trimmed = value.trim();
