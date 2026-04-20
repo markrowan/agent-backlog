@@ -14,6 +14,7 @@
     "start": "node dist-server/index.js"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "@xterm/addon-fit": "^0.11.0",
     "express": "^5.2.1",
     "lucide-react": "^1.8.0",

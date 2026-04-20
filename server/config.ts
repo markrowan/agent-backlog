@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { hostingConfig, type HostedUser } from "./hosting.js";
 
 export interface SprintSummaryConfigEntry {
   sprint: string;
@@ -26,6 +27,14 @@ export interface AppConfig {
   agentCommand: string;
   recentBacklogs: RecentBacklogConfigEntry[];
   sprintSummaries: Record<string, BacklogSprintSummaryConfigEntry>;
+  hosting: {
+    mode: "local" | "hosted";
+    storageMode: "local" | "gcs";
+    workspaceName: string;
+    requiresAuth: boolean;
+    backlogPath: string | null;
+    currentUser: HostedUser | null;
+  };
 }
 
 export const DEFAULT_AGENT_COMMAND = 'codex --no-alt-screen -a never -s danger-full-access --add-dir "$BACKLOG_DIR" "$BACKLOG_BOOTSTRAP"';
@@ -49,6 +58,7 @@ function normalizeConfig(input: Partial<AppConfig> | null | undefined): AppConfi
           lastOpenedAt: Number(entry?.lastOpenedAt ?? Date.now()),
         }))
         .filter((entry) => entry.path && entry.displayName)
+        .filter((entry) => !hostingConfig.hostedMode || entry.path !== hostingConfig.backlogObjectPath)
         .sort((left, right) => right.lastOpenedAt - left.lastOpenedAt)
         .slice(0, 8)
     : [];
@@ -84,6 +94,14 @@ function normalizeConfig(input: Partial<AppConfig> | null | undefined): AppConfi
     agentCommand,
     recentBacklogs,
     sprintSummaries,
+    hosting: {
+      mode: hostingConfig.hostedMode ? "hosted" : "local",
+      storageMode: hostingConfig.storageMode,
+      workspaceName: hostingConfig.workspaceName,
+      requiresAuth: hostingConfig.requireAuth,
+      backlogPath: hostingConfig.hostedMode ? hostingConfig.backlogObjectPath : null,
+      currentUser: null,
+    },
   };
 }
 

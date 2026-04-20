@@ -1,10 +1,12 @@
 import express from "express";
 import http from "node:http";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { FSWatcher, watch } from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { Storage } from "@google-cloud/storage";
 import {
   CONFIG_PATH,
   DEFAULT_AGENT_COMMAND,
@@ -15,6 +17,7 @@ import {
   updateBacklogSprintSummaries,
   updateConfig,
 } from "./config.js";
+import { extractHostedUser, hostingConfig, isHostedUserAllowed } from "./hosting.js";
 import { WebSocketServer, WebSocket } from "ws";
 import pty, { type IPty } from "node-pty";
 import {
@@ -41,6 +44,7 @@ let watchedBacklogBaseName: string | null = null;
 let watchedBacklogVersion: number | null = null;
 const server = http.createServer(app);
 const wsServer = new WebSocketServer({ server, path: "/api/agent/terminal" });
+const hostedStorage = hostingConfig.hostedMode ? new Storage() : null;
 
 interface AgentTerminalSession {
   agentCommand: string;
@@ -104,6 +108,32 @@ let sprintSummaryTask: SprintSummaryTask = {
 let autoSprintIdleTimer: NodeJS.Timeout | null = null;
 
 app.use(express.json({ limit: "1mb" }));
+app.use((request, response, next) => {
+  const user = extractHostedUser(request.headers);
+  response.locals.hostedUser = user;
+
+  if (!hostingConfig.hostedMode || !hostingConfig.requireAuth) {
+    next();
+    return;
+  }
+
+  if (request.path === "/healthz") {
+    next();
+    return;
+  }
+
+  if (!user?.authenticated) {
+    response.status(401).json({ message: "Sign in with a workspace account to open the hosted backlog." });
+    return;
+  }
+
+  if (!isHostedUserAllowed(user)) {
+    response.status(403).json({ message: "Your account is not allowed to access this hosted workspace." });
+    return;
+  }
+
+  next();
+});
 
 function agentCommandAvailable(command: string) {
   const binary = extractCommandBinary(command);
@@ -166,7 +196,7 @@ function bindBacklogWatcher(filePath: string | null) {
   watchedBacklogBaseName = null;
   watchedBacklogVersion = null;
 
-  if (!filePath) {
+  if (!filePath || hostingConfig.hostedMode || filePath.startsWith("gs://")) {
     return;
   }
 
@@ -619,7 +649,43 @@ function isUnavailableBacklogError(error: unknown) {
   return code === "ENOENT" || code === "ENOTDIR" || code === "EACCES";
 }
 
+function requireHostedStorage() {
+  if (!hostedStorage) {
+    throw new Error("Hosted backlog storage is not configured.");
+  }
+  return hostedStorage;
+}
+
+function isGcsPath(filePath: string) {
+  return filePath.startsWith("gs://");
+}
+
+function splitGcsPath(filePath: string) {
+  const normalized = filePath.replace(/^gs:\/\//, "");
+  const slashIndex = normalized.indexOf("/");
+  if (slashIndex <= 0) {
+    throw new Error("Hosted backlog storage is missing a bucket or object path.");
+  }
+  return [normalized.slice(0, slashIndex), normalized.slice(slashIndex + 1)] as const;
+}
+
 async function validateBacklogPath(filePath: string) {
+  if (isGcsPath(filePath)) {
+    const [bucketName, objectName] = splitGcsPath(filePath);
+    const file = requireHostedStorage().bucket(bucketName).file(objectName);
+    const [exists] = await file.exists();
+    if (!exists) {
+      const error = new Error("Selected backlog file cannot be found.") as Error & { code?: string };
+      error.code = "ENOENT";
+      throw error;
+    }
+    const [raw] = await file.download();
+    if (!raw.toString("utf8").trim()) {
+      throw new Error("Selected backlog file is empty.");
+    }
+    return;
+  }
+
   const stat = await fs.stat(filePath);
   if (!stat.isFile()) {
     throw new Error("Selected path is not a file.");
@@ -764,6 +830,11 @@ app.get("/api/backlog", async (_request, response) => {
 });
 
 app.post("/api/backlog/choose", async (_request, response) => {
+  if (hostingConfig.hostedMode) {
+    response.status(400).json({ message: "Hosted mode uses uploads instead of picking local files." });
+    return;
+  }
+
   const selectedPath = chooseBacklogFilePath();
   if (!selectedPath) {
     response.status(204).end();
@@ -802,7 +873,9 @@ app.post("/api/backlog/select", async (request, response) => {
     setBacklogFile(selectedPath);
     bindBacklogWatcher(selectedPath);
     const backlog = await readBacklogFile();
-    await rememberRecentBacklog(backlog.path, backlog.displayName);
+    if (!hostingConfig.hostedMode || backlog.path !== hostingConfig.backlogObjectPath) {
+      await rememberRecentBacklog(backlog.path, backlog.displayName);
+    }
     broadcastBacklogChanged();
     response.json({
       path: backlog.path,
@@ -816,6 +889,11 @@ app.post("/api/backlog/select", async (request, response) => {
 });
 
 app.post("/api/backlog/new", async (_request, response) => {
+  if (hostingConfig.hostedMode) {
+    response.status(400).json({ message: "Hosted mode does not create local backlog files." });
+    return;
+  }
+
   const selectedFolder = chooseFolderPath();
   if (!selectedFolder) {
     response.status(204).end();
@@ -842,6 +920,11 @@ app.post("/api/backlog/new", async (_request, response) => {
 });
 
 app.post("/api/backlog/unload", async (_request, response) => {
+  if (hostingConfig.hostedMode) {
+    response.status(400).json({ message: "Hosted mode always keeps the workspace backlog loaded." });
+    return;
+  }
+
   try {
     setBacklogFile(null);
     bindBacklogWatcher(null);
@@ -1300,10 +1383,14 @@ app.get("/api/backlog/events", (request, response) => {
   });
 });
 
-app.get("/api/config", async (_request, response) => {
+app.get("/api/config", async (request, response) => {
   try {
     const config = await readConfig();
-    response.json({ ...config, configPath: CONFIG_PATH });
+    response.json({
+      ...config,
+      hosting: { ...config.hosting, currentUser: response.locals.hostedUser ?? extractHostedUser(request.headers) },
+      configPath: CONFIG_PATH,
+    });
   } catch (error) {
     response.status(500).json({ message: (error as Error).message });
   }
@@ -1314,7 +1401,11 @@ app.put("/api/config", async (request, response) => {
     const agentCommand = String(request.body?.agentCommand ?? "").trim() || DEFAULT_AGENT_COMMAND;
     const config = await updateConfig({ agentCommand });
     closeActiveTerminalSession();
-    response.json({ ...config, configPath: CONFIG_PATH });
+    response.json({
+      ...config,
+      hosting: { ...config.hosting, currentUser: response.locals.hostedUser ?? null },
+      configPath: CONFIG_PATH,
+    });
   } catch (error) {
     response.status(500).json({ message: (error as Error).message });
   }
@@ -1329,7 +1420,11 @@ app.post("/api/config/recent/open", async (request, response) => {
       return;
     }
     const config = await rememberRecentBacklog(pathValue, displayName);
-    response.json({ ...config, configPath: CONFIG_PATH });
+    response.json({
+      ...config,
+      hosting: { ...config.hosting, currentUser: response.locals.hostedUser ?? null },
+      configPath: CONFIG_PATH,
+    });
   } catch (error) {
     response.status(500).json({ message: (error as Error).message });
   }
@@ -1343,7 +1438,11 @@ app.post("/api/config/recent/remove", async (request, response) => {
       return;
     }
     const config = await removeRecentBacklog(pathValue);
-    response.json({ ...config, configPath: CONFIG_PATH });
+    response.json({
+      ...config,
+      hosting: { ...config.hosting, currentUser: response.locals.hostedUser ?? null },
+      configPath: CONFIG_PATH,
+    });
   } catch (error) {
     response.status(500).json({ message: (error as Error).message });
   }
@@ -1451,6 +1550,18 @@ app.post("/api/agent/run", async (request, response) => {
     response.status(500).json({ message: (error as Error).message });
   }
 });
+
+app.get("/healthz", (_request, response) => {
+  response.json({ ok: true, mode: hostingConfig.hostedMode ? "hosted" : "local" });
+});
+
+const clientDistPath = path.resolve("dist");
+if (existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get(/^\/(?!api\/|healthz$).*/, (_request, response) => {
+    response.sendFile(path.join(clientDistPath, "index.html"));
+  });
+}
 
 wsServer.on("connection", (socket: WebSocket) => {
   terminalClients.add(socket);

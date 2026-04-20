@@ -143,6 +143,14 @@ interface AppConfig {
   agentCommand: string;
   configPath: string;
   recentBacklogs: RecentBacklog[];
+  hosting: {
+    mode: "local" | "hosted";
+    storageMode: "local" | "gcs";
+    workspaceName: string;
+    requiresAuth: boolean;
+    backlogPath: string | null;
+    currentUser: { email: string; authenticated: boolean } | null;
+  };
 }
 
 interface MissingBacklogNotice {
@@ -564,6 +572,11 @@ function openBacklogIcon() {
   return <FolderOpen aria-hidden="true" strokeWidth={1.9} />;
 }
 
+function backlogHoverStub(filePath: string) {
+  const leaf = filePath.split("/").filter(Boolean).pop() ?? filePath;
+  return leaf.length > 36 ? `…${leaf.slice(-36)}` : leaf;
+}
+
 function itemMatchesTextFilter(item: BacklogItem, query: string) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
@@ -693,6 +706,10 @@ function App() {
   }
 
   async function rememberBacklogConfig(current: BacklogResponse) {
+    if (appConfig?.hosting?.mode === "hosted" && current.path === appConfig.hosting.backlogPath) {
+      return recentBacklogs;
+    }
+
     const response = await fetch("/api/config/recent/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -827,7 +844,7 @@ function App() {
       if (Array.isArray(parsed.hiddenStatuses)) {
         setHiddenStatuses(parsed.hiddenStatuses.filter((status): status is Status => STATUSES.includes(status as Status)));
       }
-      if (Array.isArray(parsed.recentBacklogs)) {
+      if (appConfig?.hosting?.mode !== "hosted" && Array.isArray(parsed.recentBacklogs)) {
         setRecentBacklogs(parsed.recentBacklogs.filter((entry): entry is RecentBacklog => Boolean(entry && typeof entry.path === "string" && typeof entry.displayName === "string")));
       }
       if (typeof parsed.selectedEpic === "string") setSelectedEpic(parsed.selectedEpic);
@@ -1485,7 +1502,7 @@ function App() {
     });
 
     if (response.status === 409) {
-      setError("The file changed on disk. I reloaded the latest backlog state.");
+      setError("The backlog changed before your save completed. I reloaded the latest state, please review and retry.");
       await loadBacklog();
       return;
     }
@@ -1654,7 +1671,7 @@ function App() {
     });
 
     if (response.status === 409) {
-      setError("The file changed on disk. I reloaded the latest backlog state.");
+      setError("The backlog changed before your save completed. I reloaded the latest state, please review and retry.");
       await loadBacklog();
       return;
     }
@@ -1750,7 +1767,7 @@ function App() {
     });
 
     if (response.status === 409) {
-      setError("The file changed on disk. I reloaded the latest backlog state.");
+      setError("The backlog changed before your save completed. I reloaded the latest state, please review and retry.");
       await loadBacklog();
       return;
     }
@@ -2454,32 +2471,55 @@ function App() {
           </div>
           <div className="hero-toolbar" role="group" aria-label="Backlog toolbar">
             <div className="shortcut-chip-row hero-chip-row">
-              <button
-                type="button"
-                className="source-picker source-picker--icon"
-                onClick={() => void createBacklogFile()}
-                disabled={creatingFile}
-                aria-label={creatingFile ? "Creating backlog" : "Create new backlog"}
-                title={creatingFile ? "Creating…" : "New backlog"}
-              >
-                {newBacklogIcon()}
-              </button>
-              <button
-                type="button"
-                className="source-picker source-picker--icon"
-                onClick={() => void chooseBacklogFile()}
-                disabled={choosingFile}
-                aria-label={choosingFile ? "Opening backlog" : "Open existing backlog"}
-                title={choosingFile ? "Opening…" : "Open backlog"}
-              >
-                {openBacklogIcon()}
-              </button>
+              {appConfig?.hosting?.mode !== "hosted" ? (
+                <>
+                  <button
+                    type="button"
+                    className="source-picker source-picker--icon"
+                    onClick={() => void createBacklogFile()}
+                    disabled={creatingFile}
+                    aria-label={creatingFile ? "Creating backlog" : "Create new backlog"}
+                    title={creatingFile ? "Creating…" : "New backlog"}
+                  >
+                    {newBacklogIcon()}
+                  </button>
+                  <button
+                    type="button"
+                    className="source-picker source-picker--icon"
+                    onClick={() => void chooseBacklogFile()}
+                    disabled={choosingFile}
+                    aria-label={choosingFile ? "Opening backlog" : "Open existing backlog"}
+                    title={choosingFile ? "Opening…" : "Open backlog"}
+                  >
+                    {openBacklogIcon()}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="shortcut-chip-group is-active" style={hashToPastel(appConfig.hosting.workspaceName)} title={backlogHoverStub(appConfig.hosting.backlogPath ?? appConfig.hosting.workspaceName)}>
+                    <button
+                      type="button"
+                      className={`shortcut-chip ${data?.path === appConfig.hosting.backlogPath ? "is-active" : ""}`}
+                      onClick={() => {
+                        if (appConfig.hosting.backlogPath) {
+                          void selectBacklogFile(appConfig.hosting.backlogPath);
+                        }
+                      }}
+                    >
+                      <span className="shortcut-chip-label">
+                        {appConfig.hosting.workspaceName}
+                        {appConfig.hosting.currentUser?.email ? ` · ${appConfig.hosting.currentUser.email}` : ""}
+                      </span>
+                    </button>
+                  </div>
+                </>
+              )}
               {recentBacklogs.map((entry) => (
                 <div
                   key={entry.path}
                   className={`shortcut-chip-group ${data?.path === entry.path ? "is-active" : ""}`}
                   style={hashToPastel(entry.displayName)}
-                  title={entry.path}
+                  title={appConfig?.hosting?.mode === "hosted" ? backlogHoverStub(entry.path) : entry.path}
                 >
                   <button
                     type="button"
@@ -2488,21 +2528,23 @@ function App() {
                   >
                     <span className="shortcut-chip-label">{entry.displayName}</span>
                   </button>
-                  <button
-                    type="button"
-                    className="shortcut-chip-remove"
-                    aria-label={`Remove ${entry.displayName}`}
-                    onClick={async (event) => {
-                      event.stopPropagation();
-                      try {
-                        await removeRecentBacklogConfig(entry.path);
-                      } catch (caught) {
-                        setError((caught as Error).message);
-                      }
-                    }}
-                  >
-                    {chipRemoveIcon()}
-                  </button>
+                  {appConfig?.hosting?.mode !== "hosted" ? (
+                    <button
+                      type="button"
+                      className="shortcut-chip-remove"
+                      aria-label={`Remove ${entry.displayName}`}
+                      onClick={async (event) => {
+                        event.stopPropagation();
+                        try {
+                          await removeRecentBacklogConfig(entry.path);
+                        } catch (caught) {
+                          setError((caught as Error).message);
+                        }
+                      }}
+                    >
+                      {chipRemoveIcon()}
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </div>
