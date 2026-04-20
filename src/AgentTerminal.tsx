@@ -131,6 +131,8 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
   const outboundQueueRef = useRef<string[]>([]);
   const previousTypingStateRef = useRef(false);
   const lastExternalSubmissionIdRef = useRef<number | null>(null);
+  const pendingExternalSubmissionRef = useRef<{ id: number; text: string } | null>(null);
+  const sessionStartingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<AgentTab>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -381,6 +383,16 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     }
   }
 
+  function dispatchExternalSubmission(submission: { id: number; text: string }) {
+    if (!submission.text.trim()) {
+      return;
+    }
+    lastExternalSubmissionIdRef.current = submission.id;
+    pendingExternalSubmissionRef.current = null;
+    setActiveTab("chat");
+    dispatchChatMessage(submission.text);
+  }
+
   function sendChatMessage() {
     dispatchChatMessage(draft);
   }
@@ -417,14 +429,6 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
 
     sendQueuedCommand(0);
   }, [activeTab, isAgentTyping, queuedCommands]);
-
-  useEffect(() => {
-    if (!externalSubmission || !externalSubmission.text.trim()) return;
-    if (lastExternalSubmissionIdRef.current === externalSubmission.id) return;
-    lastExternalSubmissionIdRef.current = externalSubmission.id;
-    setActiveTab("chat");
-    dispatchChatMessage(externalSubmission.text);
-  }, [externalSubmission]);
 
   useEffect(() => {
     if (!backlogPath) {
@@ -632,6 +636,7 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
     }
 
     let cancelled = false;
+    sessionStartingRef.current = true;
 
     void (async () => {
       try {
@@ -665,12 +670,17 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
         terminalRef.current?.reset();
         sessionIdRef.current = payload?.sessionId ?? null;
         resetChatState();
+        sessionStartingRef.current = false;
         if (terminalRef.current) {
           scrollTerminalToBottom(terminalRef.current);
         }
         onSessionPathChange?.(payload?.backlogPath ?? backlogPath ?? null);
         onStatusChange?.(`Agent started for ${payload?.backlogPath ?? backlogPath}.`);
+        if (pendingExternalSubmissionRef.current) {
+          dispatchExternalSubmission(pendingExternalSubmissionRef.current);
+        }
       } catch (error) {
+        sessionStartingRef.current = false;
         if (cancelled) return;
         switchToTerminal((error as Error).message);
       }
@@ -678,10 +688,23 @@ export default function AgentTerminal({ agentCommand, backlogPath, configVersion
 
     return () => {
       cancelled = true;
+      sessionStartingRef.current = false;
     };
   }, [agentCommand, backlogPath, configVersion, onSessionPathChange, onStatusChange]);
 
+  useEffect(() => {
+    if (!externalSubmission || !externalSubmission.text.trim()) return;
+    if (lastExternalSubmissionIdRef.current === externalSubmission.id) return;
+    if (sessionStartingRef.current || !sessionIdRef.current) {
+      pendingExternalSubmissionRef.current = externalSubmission;
+      setActiveTab("chat");
+      return;
+    }
+    dispatchExternalSubmission(externalSubmission);
+  }, [externalSubmission]);
+
   return (
+
     <div className="agent-surface">
       <div className="agent-tabs" role="tablist" aria-label="Paula views">
         <button
